@@ -128,13 +128,15 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
 
 volumes:
   redis-data:
 ```
+
+Binding to `127.0.0.1` (not `0.0.0.0`) keeps the unauthenticated dev Redis reachable only from this machine, not from the rest of the network.
 
 - [ ] **Step 7: Verify Redis starts and responds**
 
