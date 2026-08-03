@@ -5,6 +5,7 @@ import { createTestQueue, TEST_QUEUE_NAME, type TestQueueJobData } from "@fmagen
 
 describe("end-to-end: api enqueues, worker processes", () => {
   let producerRedis: Redis;
+  let workerRedis: Redis;
   let worker: Worker<TestQueueJobData>;
 
   beforeAll(() => {
@@ -12,20 +13,28 @@ describe("end-to-end: api enqueues, worker processes", () => {
   });
 
   afterAll(async () => {
-    await worker.close();
-    await producerRedis.quit();
+    if (worker) {
+      await worker.close();
+    }
+    if (workerRedis) {
+      await workerRedis.quit();
+    }
+    if (producerRedis) {
+      await producerRedis.quit();
+    }
   });
 
   it("processes a job enqueued through the shared test queue", async () => {
     const processed: string[] = [];
 
+    workerRedis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", { maxRetriesPerRequest: null });
     worker = new Worker<TestQueueJobData>(
       TEST_QUEUE_NAME,
       async (job) => {
         processed.push(job.data.message);
         return { ok: true };
       },
-      { connection: new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", { maxRetriesPerRequest: null }) }
+      { connection: workerRedis }
     );
 
     await new Promise<void>((resolve) => worker.on("ready", resolve));
