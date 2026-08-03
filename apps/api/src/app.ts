@@ -5,6 +5,7 @@ import type { EvolutionApiClient } from "@fmagentes/shared";
 import type { Queue } from "bullmq";
 import { registerHealthRoute } from "./routes/health";
 import { registerWebhookRoute } from "./routes/webhooks";
+import { registerTestQueueRoute } from "./routes/testQueue";
 
 export interface AppDependencies {
   redis: Redis;
@@ -28,6 +29,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
 
   registerHealthRoute(app, deps);
   registerWebhookRoute(app);
+  registerTestQueueRoute(app, deps);
 
   return app;
 }
