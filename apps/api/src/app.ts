@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EvolutionApiClient } from "@fmagentes/shared";
 import type { Queue } from "bullmq";
 import { registerHealthRoute } from "./routes/health";
+import { registerWebhookRoute } from "./routes/webhooks";
 
 export interface AppDependencies {
   redis: Redis;
@@ -26,6 +27,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   });
 
   registerHealthRoute(app, deps);
+  registerWebhookRoute(app);
 
   return app;
 }
