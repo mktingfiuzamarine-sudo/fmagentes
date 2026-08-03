@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Runtime: Node.js >= 20, TypeScript across the whole backend.
+- Runtime: Node.js >= 22, TypeScript across the whole backend. (Raised from >=20 during Task 4: the resolved `@supabase/supabase-js@2.111.0` and its sub-deps declare `engines: {node: ">=22.0.0"}`; user chose to raise the floor rather than pin an older client.)
 - Monorepo: pnpm workspaces + Turborepo.
 - API HTTP framework: Fastify.
 - Dashboard: Next.js (App Router) with Supabase Auth (email/password).
