@@ -24,6 +24,7 @@ export function createEvolutionApiClient(config: EvolutionApiConfig): EvolutionA
     const response = await fetch(`${config.baseUrl}${path}`, {
       ...init,
       headers: { ...headers, ...init?.headers },
+      signal: AbortSignal.timeout(5000),
     });
 
     if (!response.ok) {
