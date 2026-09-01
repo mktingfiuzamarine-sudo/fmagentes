@@ -1,0 +1,26 @@
+{
+  "name": "@fmagentes/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fmagentes/config": "workspace:*",
+    "@fmagentes/shared": "workspace:*",
+    "@supabase/supabase-js": "^2.45.4",
+    "fastify": "^4.28.1",
+    "ioredis": "^5.4.1",
+    "bullmq": "^5.13.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.2"
+  }
+}
