@@ -18,7 +18,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   const app = Fastify({ logger: true });
 
   app.setErrorHandler((error, request, reply) => {
-    if (request.url === "/webhooks/evolution") {
+    if (request.routeOptions.url === "/webhooks/evolution") {
       app.log.warn({ err: error }, "Malformed Evolution API webhook payload");
       reply.code(200).send({ received: false });
       return;

@@ -1,7 +1,7 @@
 import { getHealth } from "../../lib/getHealth";
 
 export default async function DashboardPage() {
-  const health = await getHealth(process.env.NEXT_PUBLIC_API_URL!);
+  const health = await getHealth(process.env.NEXT_PUBLIC_API_URL);
 
   return (
     <main>

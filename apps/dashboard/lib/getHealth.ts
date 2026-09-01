@@ -4,7 +4,11 @@ export interface HealthStatus {
   evolutionApi: string;
 }
 
-export async function getHealth(apiUrl: string): Promise<HealthStatus | null> {
+export async function getHealth(apiUrl: string | undefined): Promise<HealthStatus | null> {
+  if (!apiUrl) {
+    return null;
+  }
+
   try {
     const response = await fetch(`${apiUrl}/health`, { cache: "no-store" });
     return (await response.json()) as HealthStatus;

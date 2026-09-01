@@ -27,4 +27,14 @@ describe("getHealth", () => {
 
     expect(result).toBeNull();
   });
+
+  it("returns null without fetching when the API URL is missing", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getHealth(undefined);
+
+    expect(result).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

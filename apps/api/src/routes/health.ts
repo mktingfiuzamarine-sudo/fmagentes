@@ -20,8 +20,12 @@ export function registerHealthRoute(app: FastifyInstance, deps: AppDependencies)
 }
 
 async function checkSupabase(deps: AppDependencies): Promise<boolean> {
-  const { error } = await deps.supabase.from("instances").select("id").limit(1);
-  return !error;
+  try {
+    const { error } = await deps.supabase.from("instances").select("id").limit(1);
+    return !error;
+  } catch {
+    return false;
+  }
 }
 
 async function checkRedis(deps: AppDependencies): Promise<boolean> {

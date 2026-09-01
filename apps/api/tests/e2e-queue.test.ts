@@ -39,16 +39,21 @@ describe("end-to-end: api enqueues, worker processes", () => {
 
     await new Promise<void>((resolve) => worker.on("ready", resolve));
 
-    const queue = createTestQueue(producerRedis);
-    await queue.add("e2e-test-job", { message: "ping" });
-
-    await new Promise<void>((resolve, reject) => {
+    // Bind the completion listener before enqueuing: queue.add() resolves as
+    // soon as the job is in Redis, and a fast worker could finish it before a
+    // listener attached afterwards — losing the event and hanging the test.
+    const completed = new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error("timed out waiting for job to process")), 5000);
       worker.on("completed", () => {
         clearTimeout(timeout);
         resolve();
       });
     });
+
+    const queue = createTestQueue(producerRedis);
+    await queue.add("e2e-test-job", { message: "ping" });
+
+    await completed;
 
     expect(processed).toEqual(["ping"]);
     await queue.close();
