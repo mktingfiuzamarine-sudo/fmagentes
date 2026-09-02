@@ -1,5 +1,20 @@
 # Fundação Implementation Plan
 
+> **STATUS: COMPLETE (2026-09-01).** All 15 tasks implemented and reviewed via
+> superpowers:subagent-driven-development. Branch `worktree-fundacao` merged into
+> `master` at commit `bb2ecc8` (preceded by review-fix commit `aa6d391`).
+> `pnpm build` (5/5) and `pnpm test` (7/7 tasks, 19 tests) green on `master`;
+> Task 15 full-boot verification passed end-to-end — `/health` returns all three
+> services `connected`, dashboard login works (`teste@fmagentes.com`), and the
+> api→worker queue pipeline is proven via `POST /test/enqueue`.
+>
+> Key facts: Supabase project ref `odqqiteoskmfpwrlqyrb`; Evolution API reachable at
+> `https://fmagentes-evolution-api.5svpm2.easypanel.host` (its Prisma tables live in a
+> separate `evolution` schema in the same Supabase project). Migration `0002_fk_indexes.sql`
+> added post-review and applied. Deferred hardening (RLS tenant isolation, webhook auth,
+> `/test/enqueue` auth) is documented and out of scope for this scaffold per Global Constraints.
+> The task checkboxes below are left unchecked as the historical plan of record.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Stand up the foundational monorepo (API, worker, dashboard), Supabase project/schema, and Redis/BullMQ wiring for the WhatsApp AI agent platform, proven end-to-end with a smoke test — no business logic yet.
