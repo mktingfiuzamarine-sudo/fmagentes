@@ -8,3 +8,4 @@ export {
   type QrCodeUpdatedEvent,
 } from "./events";
 export { ingestInboundMessage, type IngestResult } from "./ingestInboundMessage";
+export { sendMessage, ConversationNotFoundError, type SentMessage } from "./sendMessage";
