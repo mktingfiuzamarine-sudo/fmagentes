@@ -7,3 +7,4 @@ export {
   type ConnectionUpdateEvent,
   type QrCodeUpdatedEvent,
 } from "./events";
+export { ingestInboundMessage, type IngestResult } from "./ingestInboundMessage";
