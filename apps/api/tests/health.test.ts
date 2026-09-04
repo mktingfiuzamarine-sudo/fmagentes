@@ -28,6 +28,7 @@ describe("GET /health", () => {
         fetchInstance: async () => null,
       } as never,
       testQueue: { add: async () => ({ id: "1" }) } as never,
+      config: { webhookSecret: "test-secret", publicWebhookUrl: "https://cb.example.com" },
     };
 
     app = buildApp(deps);
@@ -66,6 +67,7 @@ describe("GET /health", () => {
         fetchInstance: async () => null,
       } as never,
       testQueue: { add: async () => ({ id: "1" }) } as never,
+      config: { webhookSecret: "test-secret", publicWebhookUrl: "https://cb.example.com" },
     };
     const unhealthyApp = buildApp(deps);
 

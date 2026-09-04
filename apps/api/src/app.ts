@@ -7,11 +7,17 @@ import { registerHealthRoute } from "./routes/health";
 import { registerWebhookRoute } from "./routes/webhooks";
 import { registerTestQueueRoute } from "./routes/testQueue";
 
+export interface AppConfig {
+  webhookSecret: string;
+  publicWebhookUrl: string;
+}
+
 export interface AppDependencies {
   redis: Redis;
   supabase: SupabaseClient;
   evolutionApi: EvolutionApiClient;
   testQueue: Queue;
+  config: AppConfig;
 }
 
 export function buildApp(deps: AppDependencies): FastifyInstance {
@@ -28,7 +34,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   });
 
   registerHealthRoute(app, deps);
-  registerWebhookRoute(app);
+  registerWebhookRoute(app, deps);
   registerTestQueueRoute(app, deps);
 
   return app;

@@ -9,6 +9,7 @@ describe("POST /test/enqueue", () => {
       supabase: {} as never,
       evolutionApi: {} as never,
       testQueue: { add: addMock } as never,
+      config: { webhookSecret: "test-secret", publicWebhookUrl: "https://cb.example.com" },
     };
     const app = buildApp(deps);
 
