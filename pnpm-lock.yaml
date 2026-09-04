@@ -20,6 +20,9 @@ importers:
       '@fmagentes/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@fmagentes/messaging':
+        specifier: workspace:*
+        version: link:../../packages/messaging
       '@fmagentes/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -91,6 +94,9 @@ importers:
       '@fmagentes/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@fmagentes/messaging':
+        specifier: workspace:*
+        version: link:../../packages/messaging
       '@fmagentes/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -122,6 +128,28 @@ importers:
       zod:
         specifier: ^3.23.8
         version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.2
+        version: 2.1.9(@types/node@22.20.1)
+
+  packages/messaging:
+    dependencies:
+      '@fmagentes/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@supabase/supabase-js':
+        specifier: ^2.45.4
+        version: 2.111.0
+      bullmq:
+        specifier: ^5.13.2
+        version: 5.81.3
+      ioredis:
+        specifier: ^5.4.1
+        version: 5.11.1
     devDependencies:
       typescript:
         specifier: ^5.6.3

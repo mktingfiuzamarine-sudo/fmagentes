@@ -10,6 +10,8 @@ const schema = z.object({
   EVOLUTION_API_KEY: z.string().min(1),
   ANTHROPIC_API_KEY: z.string().min(1),
   OPENAI_API_KEY: z.string().min(1),
+  WEBHOOK_SECRET: z.string().min(1),
+  PUBLIC_WEBHOOK_URL: z.string().url(),
 });
 
 export const loadEnv = createEnvLoader(schema);

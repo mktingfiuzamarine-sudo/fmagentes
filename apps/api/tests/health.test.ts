@@ -21,10 +21,14 @@ describe("GET /health", () => {
       supabase: { from: () => ({ select: () => ({ limit: async () => ({ error: null }) }) }) } as never,
       evolutionApi: {
         checkConnection: async () => true,
-        getInstanceStatus: async () => ({ instanceName: "", state: "" }),
-        sendMessage: async () => {},
-      },
-      testQueue: { add: async () => ({ id: "1" }) } as never,
+        sendText: async () => ({ messageId: null }),
+        createInstance: async () => {},
+        connectInstance: async () => ({ qrcode: null, pairingCode: null }),
+        deleteInstance: async () => {},
+        fetchInstance: async () => null,
+      } as never,
+      inboundQueue: { add: async () => ({ id: "1" }) } as never,
+      config: { webhookSecret: "test-secret", publicWebhookUrl: "https://cb.example.com" },
     };
 
     app = buildApp(deps);
@@ -56,10 +60,14 @@ describe("GET /health", () => {
       supabase: { from: () => ({ select: () => ({ limit: async () => ({ error: new Error("down") }) }) }) } as never,
       evolutionApi: {
         checkConnection: async () => true,
-        getInstanceStatus: async () => ({ instanceName: "", state: "" }),
-        sendMessage: async () => {},
-      },
-      testQueue: { add: async () => ({ id: "1" }) } as never,
+        sendText: async () => ({ messageId: null }),
+        createInstance: async () => {},
+        connectInstance: async () => ({ qrcode: null, pairingCode: null }),
+        deleteInstance: async () => {},
+        fetchInstance: async () => null,
+      } as never,
+      inboundQueue: { add: async () => ({ id: "1" }) } as never,
+      config: { webhookSecret: "test-secret", publicWebhookUrl: "https://cb.example.com" },
     };
     const unhealthyApp = buildApp(deps);
 

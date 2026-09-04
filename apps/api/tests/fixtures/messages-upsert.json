@@ -1,0 +1,11 @@
+{
+  "event": "messages.upsert",
+  "instance": "acme",
+  "data": {
+    "key": { "remoteJid": "5511999998888@s.whatsapp.net", "fromMe": false, "id": "3EB0C767D26A1D853909" },
+    "pushName": "Alice",
+    "message": { "conversation": "Olá, tudo bem?" },
+    "messageType": "conversation",
+    "messageTimestamp": 1725240000
+  }
+}

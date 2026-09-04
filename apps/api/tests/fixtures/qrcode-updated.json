@@ -1,0 +1,1 @@
+{ "event": "qrcode.updated", "instance": "acme", "data": { "qrcode": { "code": "2@abc", "base64": "data:image/png;base64,AAAA" } } }
