@@ -104,6 +104,25 @@ describe("POST /webhooks/evolution", () => {
     await app.close();
   });
 
+  it("still writes the status on connection.update when fetchInstance fails", async () => {
+    const update = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
+    const d = deps({
+      supabase: { from: () => ({ update }) } as never,
+      evolutionApi: {
+        fetchInstance: async () => {
+          throw new Error("Evolution API request failed: 404 Not Found");
+        },
+      } as never,
+    });
+    const app = buildApp(d);
+
+    const response = await post(app, fixture("connection-update"));
+
+    expect(response.statusCode).toBe(200);
+    expect(update).toHaveBeenCalledWith({ status: "connected" });
+    await app.close();
+  });
+
   it("500 when ingest throws (transient failure → Evolution retries)", async () => {
     ingestMock.mockImplementationOnce(async () => {
       throw new Error("db down");

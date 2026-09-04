@@ -30,8 +30,14 @@ export function registerWebhookRoute(app: FastifyInstance, deps: AppDependencies
         const status = mapConnectionState(event.state);
         const patch: Record<string, unknown> = { status };
         if (status === INSTANCE_STATUS.CONNECTED) {
-          const info = await deps.evolutionApi.fetchInstance(event.instanceName);
-          if (info?.number) patch.phone_number = info.number;
+          // Best-effort phone sync: a failed lookup must not block the status write
+          // (Evolution answers 404 for instances it no longer tracks).
+          try {
+            const info = await deps.evolutionApi.fetchInstance(event.instanceName);
+            if (info?.number) patch.phone_number = info.number;
+          } catch (error) {
+            app.log.warn({ err: error, instance: event.instanceName }, "fetchInstance failed during connection.update");
+          }
         }
         await deps.supabase.from("instances").update(patch).eq("evolution_instance_id", event.instanceName);
         return reply.code(200).send({ received: true });
