@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@fmagentes/config": "workspace:*",
+    "@fmagentes/messaging": "workspace:*",
     "@fmagentes/shared": "workspace:*",
     "bullmq": "^5.13.2",
     "ioredis": "^5.4.1",

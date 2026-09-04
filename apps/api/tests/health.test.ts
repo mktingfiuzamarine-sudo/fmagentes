@@ -27,7 +27,7 @@ describe("GET /health", () => {
         deleteInstance: async () => {},
         fetchInstance: async () => null,
       } as never,
-      testQueue: { add: async () => ({ id: "1" }) } as never,
+      inboundQueue: { add: async () => ({ id: "1" }) } as never,
       config: { webhookSecret: "test-secret", publicWebhookUrl: "https://cb.example.com" },
     };
 
@@ -66,7 +66,7 @@ describe("GET /health", () => {
         deleteInstance: async () => {},
         fetchInstance: async () => null,
       } as never,
-      testQueue: { add: async () => ({ id: "1" }) } as never,
+      inboundQueue: { add: async () => ({ id: "1" }) } as never,
       config: { webhookSecret: "test-secret", publicWebhookUrl: "https://cb.example.com" },
     };
     const unhealthyApp = buildApp(deps);

@@ -20,6 +20,9 @@ importers:
       '@fmagentes/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@fmagentes/messaging':
+        specifier: workspace:*
+        version: link:../../packages/messaging
       '@fmagentes/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -91,6 +94,9 @@ importers:
       '@fmagentes/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@fmagentes/messaging':
+        specifier: workspace:*
+        version: link:../../packages/messaging
       '@fmagentes/shared':
         specifier: workspace:*
         version: link:../../packages/shared

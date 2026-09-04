@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Redis } from "ioredis";
 import { Worker } from "bullmq";
-import { createTestQueue, TEST_QUEUE_NAME, type TestQueueJobData } from "@fmagentes/shared";
+import { createInboundQueue, INBOUND_QUEUE_NAME, type InboundJobData } from "@fmagentes/messaging";
 
 describe("end-to-end: api enqueues, worker processes", () => {
   let producerRedis: Redis;
   let workerRedis: Redis;
-  let worker: Worker<TestQueueJobData>;
+  let worker: Worker<InboundJobData>;
 
   beforeAll(() => {
     producerRedis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", { maxRetriesPerRequest: null });
@@ -24,14 +24,14 @@ describe("end-to-end: api enqueues, worker processes", () => {
     }
   });
 
-  it("processes a job enqueued through the shared test queue", async () => {
+  it("processes a job enqueued through the inbound-messages queue", async () => {
     const processed: string[] = [];
 
     workerRedis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", { maxRetriesPerRequest: null });
-    worker = new Worker<TestQueueJobData>(
-      TEST_QUEUE_NAME,
+    worker = new Worker<InboundJobData>(
+      INBOUND_QUEUE_NAME,
       async (job) => {
-        processed.push(job.data.message);
+        processed.push(job.data.messageId);
         return { ok: true };
       },
       { connection: workerRedis }
@@ -50,12 +50,12 @@ describe("end-to-end: api enqueues, worker processes", () => {
       });
     });
 
-    const queue = createTestQueue(producerRedis);
-    await queue.add("e2e-test-job", { message: "ping" });
+    const queue = createInboundQueue(producerRedis);
+    await queue.add(INBOUND_QUEUE_NAME, { messageId: "msg-e2e", conversationId: "conv-e2e", instanceId: "inst-e2e" });
 
     await completed;
 
-    expect(processed).toEqual(["ping"]);
+    expect(processed).toEqual(["msg-e2e"]);
     await queue.close();
   }, 10000);
 });

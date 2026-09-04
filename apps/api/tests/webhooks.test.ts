@@ -6,7 +6,7 @@ function fakeDeps(): AppDependencies {
     redis: {} as never,
     supabase: {} as never,
     evolutionApi: {} as never,
-    testQueue: { add: async () => ({ id: "1" }) } as never,
+    inboundQueue: { add: async () => ({ id: "1" }) } as never,
     config: { webhookSecret: "test-secret", publicWebhookUrl: "https://cb.example.com" },
   };
 }
@@ -24,22 +24,6 @@ describe("POST /webhooks/evolution", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ received: true });
-
-    await app.close();
-  });
-
-  it("returns 200 even for a malformed JSON payload, to avoid webhook retries", async () => {
-    const app = buildApp(fakeDeps());
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/webhooks/evolution",
-      payload: "{not valid json",
-      headers: { apikey: "test-secret", "content-type": "application/json" },
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ received: false });
 
     await app.close();
   });

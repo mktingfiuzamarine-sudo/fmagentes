@@ -3,9 +3,9 @@ import type { Redis } from "ioredis";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EvolutionApiClient } from "@fmagentes/shared";
 import type { Queue } from "bullmq";
+import type { InboundJobData } from "@fmagentes/messaging";
 import { registerHealthRoute } from "./routes/health";
 import { registerWebhookRoute } from "./routes/webhooks";
-import { registerTestQueueRoute } from "./routes/testQueue";
 
 export interface AppConfig {
   webhookSecret: string;
@@ -16,26 +16,19 @@ export interface AppDependencies {
   redis: Redis;
   supabase: SupabaseClient;
   evolutionApi: EvolutionApiClient;
-  testQueue: Queue;
+  inboundQueue: Queue<InboundJobData>;
   config: AppConfig;
 }
 
 export function buildApp(deps: AppDependencies): FastifyInstance {
   const app = Fastify({ logger: true });
 
-  app.setErrorHandler((error, request, reply) => {
-    if (request.routeOptions.url === "/webhooks/evolution") {
-      app.log.warn({ err: error }, "Malformed Evolution API webhook payload");
-      reply.code(200).send({ received: false });
-      return;
-    }
-
+  app.setErrorHandler((error, _request, reply) => {
     reply.send(error);
   });
 
   registerHealthRoute(app, deps);
   registerWebhookRoute(app, deps);
-  registerTestQueueRoute(app, deps);
 
   return app;
 }

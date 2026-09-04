@@ -8,4 +8,3 @@ export {
 } from "./evolutionApiClient";
 export { INSTANCE_STATUS, mapConnectionState, type InstanceStatusValue } from "./instanceStatus";
 export { getModel, type LlmConfig, type LlmProvider } from "./llm";
-export { createTestQueue, TEST_QUEUE_NAME, type TestQueueJobData } from "./testQueue";
