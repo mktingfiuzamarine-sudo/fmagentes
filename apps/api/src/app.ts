@@ -23,6 +23,14 @@ export interface AppDependencies {
 export function buildApp(deps: AppDependencies): FastifyInstance {
   const app = Fastify({ logger: true });
 
+  app.addContentTypeParser("application/json", { parseAs: "string" }, (_request, body, done) => {
+    try {
+      done(null, body ? JSON.parse(body as string) : undefined);
+    } catch {
+      done(null, undefined);
+    }
+  });
+
   app.setErrorHandler((error, _request, reply) => {
     reply.send(error);
   });
