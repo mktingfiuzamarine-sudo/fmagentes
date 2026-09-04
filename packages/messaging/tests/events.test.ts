@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { parseEvolutionEvent } from "../src/events";
+import { parseEvolutionEvent, type InboundMessageEvent } from "../src/events";
+
+const parseInbound = (body: unknown) => parseEvolutionEvent(body) as InboundMessageEvent | null;
 
 const inbound = {
   event: "messages.upsert",
@@ -29,17 +31,17 @@ describe("parseEvolutionEvent", () => {
 
   it("reads text from extendedTextMessage", () => {
     const evt = { ...inbound, data: { ...inbound.data, message: { extendedTextMessage: { text: "long one" } } } };
-    expect(parseEvolutionEvent(evt)?.text).toBe("long one");
+    expect(parseInbound(evt)?.text).toBe("long one");
   });
 
   it("returns null text for a non-text message (e.g. image)", () => {
     const evt = { ...inbound, data: { ...inbound.data, message: { imageMessage: {} } } };
-    expect(parseEvolutionEvent(evt)?.text).toBeNull();
+    expect(parseInbound(evt)?.text).toBeNull();
   });
 
   it("marks fromMe messages", () => {
     const evt = { ...inbound, data: { ...inbound.data, key: { ...inbound.data.key, fromMe: true } } };
-    expect(parseEvolutionEvent(evt)?.fromMe).toBe(true);
+    expect(parseInbound(evt)?.fromMe).toBe(true);
   });
 
   it("parses connection.update", () => {
