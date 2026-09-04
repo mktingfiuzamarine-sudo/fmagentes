@@ -6,6 +6,7 @@ import type { Queue } from "bullmq";
 import type { InboundJobData } from "@fmagentes/messaging";
 import { registerHealthRoute } from "./routes/health";
 import { registerWebhookRoute } from "./routes/webhooks";
+import { registerInstanceRoutes } from "./routes/instances";
 
 export interface AppConfig {
   webhookSecret: string;
@@ -37,6 +38,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
 
   registerHealthRoute(app, deps);
   registerWebhookRoute(app, deps);
+  registerInstanceRoutes(app, deps);
 
   return app;
 }
