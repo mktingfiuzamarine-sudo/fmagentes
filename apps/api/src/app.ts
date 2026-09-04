@@ -7,6 +7,7 @@ import type { InboundJobData } from "@fmagentes/messaging";
 import { registerHealthRoute } from "./routes/health";
 import { registerWebhookRoute } from "./routes/webhooks";
 import { registerInstanceRoutes } from "./routes/instances";
+import { registerConversationRoutes } from "./routes/conversations";
 
 export interface AppConfig {
   webhookSecret: string;
@@ -39,6 +40,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   registerHealthRoute(app, deps);
   registerWebhookRoute(app, deps);
   registerInstanceRoutes(app, deps);
+  registerConversationRoutes(app, deps);
 
   return app;
 }
