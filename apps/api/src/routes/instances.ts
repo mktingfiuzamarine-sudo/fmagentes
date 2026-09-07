@@ -14,6 +14,7 @@ export function registerInstanceRoutes(app: FastifyInstance, deps: AppDependenci
       await deps.evolutionApi.createInstance(name, {
         url: `${deps.config.publicWebhookUrl}/webhooks/evolution`,
         events: WEBHOOK_EVENTS,
+        headers: { apikey: deps.config.webhookSecret },
       });
     } catch (error) {
       app.log.error({ err: error }, "Evolution createInstance failed");

@@ -6,7 +6,7 @@ export interface EvolutionApiConfig {
 export interface EvolutionApiClient {
   checkConnection(): Promise<boolean>;
   sendText(instanceName: string, to: string, text: string): Promise<{ messageId: string | null }>;
-  createInstance(name: string, webhook: { url: string; events: string[] }): Promise<void>;
+  createInstance(name: string, webhook: { url: string; events: string[]; headers?: Record<string, string> }): Promise<void>;
   connectInstance(name: string): Promise<{ qrcode: string | null; pairingCode: string | null }>;
   deleteInstance(name: string): Promise<void>;
   fetchInstance(name: string): Promise<{ state: string; number: string | null } | null>;
@@ -22,7 +22,7 @@ export function createEvolutionApiClient(config: EvolutionApiConfig): EvolutionA
     const response = await fetch(`${config.baseUrl}${path}`, {
       ...init,
       headers: { ...headers, ...init?.headers },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(15000),
     });
 
     if (!response.ok) {
@@ -60,7 +60,7 @@ export function createEvolutionApiClient(config: EvolutionApiConfig): EvolutionA
           instanceName: name,
           integration: "WHATSAPP-BAILEYS",
           qrcode: true,
-          webhook: { url: webhook.url, byEvents: true, events: webhook.events },
+          webhook: { url: webhook.url, events: webhook.events, headers: webhook.headers },
         }),
       });
     },
