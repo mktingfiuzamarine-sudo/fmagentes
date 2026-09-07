@@ -47,6 +47,7 @@ describe("instance routes", () => {
     expect(createInstance).toHaveBeenCalledWith("acme", {
       url: "https://cb.example.com/webhooks/evolution",
       events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE", "QRCODE_UPDATED"],
+      headers: { apikey: "s" },
     });
     await app.close();
   });
