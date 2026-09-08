@@ -10,3 +10,7 @@ dist
 .claude/
 .playwright-mcp/
 .superpowers/
+
+# scripts/fresh-qr.sh scratch file — holds a live WhatsApp pairing QR if the
+# script dies before its cleanup step. Never commit it.
+.qr-tmp.json

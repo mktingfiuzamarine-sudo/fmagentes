@@ -50,7 +50,11 @@ export function registerInstanceRoutes(app: FastifyInstance, deps: AppDependenci
 
     try {
       const qr = await deps.evolutionApi.connectInstance(row.evolution_instance_id);
-      await deps.supabase.from("instances").update({ status: INSTANCE_STATUS.CONNECTING }).eq("id", id);
+      // Evolution returns no QR for an already-paired instance; writing
+      // 'connecting' in that case would corrupt the stored lifecycle state.
+      if (qr.qrcode !== null) {
+        await deps.supabase.from("instances").update({ status: INSTANCE_STATUS.CONNECTING }).eq("id", id);
+      }
       return reply.code(200).send(qr);
     } catch (error) {
       app.log.error({ err: error }, "Evolution connectInstance failed");
