@@ -41,6 +41,33 @@ describe("POST /webhooks/evolution", () => {
     await app.close();
   });
 
+  it("401 when no apikey header is sent at all", async () => {
+    const app = buildApp(deps());
+    const response = await app.inject({
+      method: "POST",
+      url: "/webhooks/evolution",
+      headers: { "content-type": "application/json" },
+      payload: {},
+    });
+    expect(response.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it("401 rather than open access if the configured secret is ever absent", async () => {
+    // Guards the `undefined !== undefined` footgun: a missing header must never
+    // authenticate, even if config plumbing regresses and the secret goes missing.
+    const d = deps({ config: { webhookSecret: undefined as unknown as string, publicWebhookUrl: "https://cb.example.com" } });
+    const app = buildApp(d);
+    const response = await app.inject({
+      method: "POST",
+      url: "/webhooks/evolution",
+      headers: { "content-type": "application/json" },
+      payload: {},
+    });
+    expect(response.statusCode).toBe(401);
+    await app.close();
+  });
+
   it("200 and enqueues a job for a new inbound text message", async () => {
     ingestMock.mockResolvedValue({ messageId: "m1", conversationId: "c1", instanceId: "i1" });
     const d = deps();

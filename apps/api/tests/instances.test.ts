@@ -4,8 +4,10 @@ import { buildApp, type AppDependencies } from "../src/app";
 function deps(over: {
   createInstance?: unknown; deleteInstance?: unknown; connectInstance?: unknown;
   rows?: Record<string, unknown>;
+  update?: ReturnType<typeof vi.fn>;
 } = {}): AppDependencies {
   const rows = over.rows ?? {};
+  const update = over.update ?? vi.fn();
   return {
     redis: {} as never,
     supabase: {
@@ -17,7 +19,10 @@ function deps(over: {
           eq: () => ({ maybeSingle: async () => ({ data: rows[table] ?? null, error: null }) }),
           order: () => ({ then: (r: (v: unknown) => unknown) => r({ data: [rows[table] ?? {}], error: null }) }),
         }),
-        update: () => ({ eq: async () => ({ error: null }) }),
+        update: (payload: Record<string, unknown>) => {
+          update(payload);
+          return { eq: async () => ({ error: null }) };
+        },
         delete: () => ({ eq: async () => ({ error: null }) }),
       }),
     } as never,
@@ -73,7 +78,8 @@ describe("instance routes", () => {
 
   it("GET /instances/:id/qr connects and returns the qr payload, setting status=connecting", async () => {
     const connectInstance = vi.fn().mockResolvedValue({ qrcode: "data:img", pairingCode: "AB-12" });
-    const d = deps({ connectInstance, rows: { instances: { id: "inst-1", evolution_instance_id: "acme" } } });
+    const update = vi.fn();
+    const d = deps({ connectInstance, update, rows: { instances: { id: "inst-1", evolution_instance_id: "acme" } } });
     const app = buildApp(d);
 
     const response = await app.inject({ method: "GET", url: "/instances/inst-1/qr" });
@@ -81,6 +87,25 @@ describe("instance routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ qrcode: "data:img", pairingCode: "AB-12" });
     expect(connectInstance).toHaveBeenCalledWith("acme");
+    expect(update).toHaveBeenCalledWith({ status: "connecting" });
+    await app.close();
+  });
+
+  it("GET /instances/:id/qr does NOT write status=connecting when Evolution returns no QR", async () => {
+    // Evolution answers /instance/connect with {state:"open"} and no base64 for an
+    // already-paired instance; writing 'connecting' there corrupts the lifecycle state.
+    const update = vi.fn();
+    const d = deps({
+      update,
+      connectInstance: vi.fn().mockResolvedValue({ qrcode: null, pairingCode: null }),
+      rows: { instances: { id: "inst-1", evolution_instance_id: "acme" } },
+    });
+    const app = buildApp(d);
+
+    const response = await app.inject({ method: "GET", url: "/instances/inst-1/qr" });
+
+    expect(response.statusCode).toBe(200);
+    expect(update).not.toHaveBeenCalled();
     await app.close();
   });
 
