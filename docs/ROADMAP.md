@@ -81,14 +81,34 @@ Deviations from the plan, decided during implementation:
   vitest false-positive unhandled-rejection (`mockImplementationOnce` for
   route-caught rejections).
 
+## Hardening pass — API consumer authentication (done)
+
+Pulled forward from the sub-project 2 debt list, because `GET /instances/:id/qr`
+handing out a WhatsApp pairing QR to anyone who could reach the port blocked any
+non-local deployment.
+
+- `apps/api/src/auth.ts` — a `preHandler` that requires a `Bearer` token,
+  verifies it through an injected `AuthPort`, and checks the caller against an
+  allowlist. **401** means "we do not know who you are" (no header, wrong scheme,
+  unverifiable token, *or* a verification outage — an outage must not become an
+  open door); **403** means "we know you, and you are not allowed".
+- The allowlist (`API_ALLOWED_USERS`, comma-separated) accepts emails or Supabase
+  user ids, matches case-insensitively, trims whitespace, and **fails closed**:
+  an empty list rejects everyone. It stands in for tenant scoping until the
+  schema grows an owner column.
+- `createSupabaseAuthPort` verifies tokens through a **separate anon-key client**
+  (`SUPABASE_ANON_KEY`) — the service-key client bypasses auth and would never
+  reject a caller's token.
+- Protected routes live in an encapsulated Fastify scope in `app.ts`, so the hook
+  covers them by construction rather than via an exception list someone must
+  maintain. `GET /health` (a probe) and `POST /webhooks/evolution` (carries its
+  own `apikey`; Evolution cannot hold a user session) stay deliberately outside.
+
+Verification: `pnpm build` 6/6, `pnpm test` 9 packages green, `apps/api` 41/41.
+The dashboard needed no change — it only calls the public `/health`.
+
 ### Debt carried forward (not in scope for sub-project 2)
 
-- **`apps/api` has no consumer authentication.** The instance-management and
-  outbound-message routes are open to anyone who can reach the port — including
-  `GET /instances/:id/qr`, which hands out a WhatsApp pairing QR. An API auth
-  layer (Supabase JWT verification or an internal service token) must land with
-  the dashboard build (sub-project 5, the first real consumer) or a dedicated
-  hardening pass **before any non-local deployment**.
 - RLS policies remain `using (true) with check (true)` — no tenant isolation; the
   service-key Supabase client bypasses RLS entirely.
 - `POST /instances` writes no compensating delete if the Evolution instance is

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Redis } from "ioredis";
 import { buildApp, type AppDependencies } from "../src/app";
+import { TEST_ALLOWED_USERS, testAuth } from "./helpers/auth";
 import type { FastifyInstance } from "fastify";
 
 describe("GET /health", () => {
@@ -28,7 +29,8 @@ describe("GET /health", () => {
         fetchInstance: async () => null,
       } as never,
       inboundQueue: { add: async () => ({ id: "1" }) } as never,
-      config: { webhookSecret: "test-secret", publicWebhookUrl: "https://cb.example.com" },
+      auth: testAuth(),
+      config: { webhookSecret: "test-secret", publicWebhookUrl: "https://cb.example.com", allowedUsers: TEST_ALLOWED_USERS },
     };
 
     app = buildApp(deps);
@@ -67,7 +69,8 @@ describe("GET /health", () => {
         fetchInstance: async () => null,
       } as never,
       inboundQueue: { add: async () => ({ id: "1" }) } as never,
-      config: { webhookSecret: "test-secret", publicWebhookUrl: "https://cb.example.com" },
+      auth: testAuth(),
+      config: { webhookSecret: "test-secret", publicWebhookUrl: "https://cb.example.com", allowedUsers: TEST_ALLOWED_USERS },
     };
     const unhealthyApp = buildApp(deps);
 

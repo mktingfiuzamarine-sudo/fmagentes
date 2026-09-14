@@ -10,6 +10,7 @@ vi.mock("@fmagentes/messaging", async (importActual) => ({
 }));
 
 import { buildApp, type AppDependencies } from "../src/app";
+import { TEST_ALLOWED_USERS, testAuth } from "./helpers/auth";
 
 const fixture = (name: string) => JSON.parse(readFileSync(join(__dirname, "fixtures", `${name}.json`), "utf8"));
 
@@ -19,7 +20,8 @@ function deps(overrides: Partial<AppDependencies> = {}): AppDependencies {
     supabase: { from: () => ({ update: () => ({ eq: async () => ({ error: null }) }) }) } as never,
     evolutionApi: { fetchInstance: async () => ({ state: "open", number: "5511988887777" }) } as never,
     inboundQueue: { add: vi.fn().mockResolvedValue({ id: "job-1" }) } as never,
-    config: { webhookSecret: "s3cr3t", publicWebhookUrl: "https://cb.example.com" },
+    auth: testAuth(),
+    config: { webhookSecret: "s3cr3t", publicWebhookUrl: "https://cb.example.com", allowedUsers: TEST_ALLOWED_USERS },
     ...overrides,
   };
 }
@@ -56,7 +58,13 @@ describe("POST /webhooks/evolution", () => {
   it("401 rather than open access if the configured secret is ever absent", async () => {
     // Guards the `undefined !== undefined` footgun: a missing header must never
     // authenticate, even if config plumbing regresses and the secret goes missing.
-    const d = deps({ config: { webhookSecret: undefined as unknown as string, publicWebhookUrl: "https://cb.example.com" } });
+    const d = deps({
+      config: {
+        webhookSecret: undefined as unknown as string,
+        publicWebhookUrl: "https://cb.example.com",
+        allowedUsers: TEST_ALLOWED_USERS,
+      },
+    });
     const app = buildApp(d);
     const response = await app.inject({
       method: "POST",
