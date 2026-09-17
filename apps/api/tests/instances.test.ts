@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildApp, type AppDependencies } from "../src/app";
+import { AUTH_HEADERS, TEST_ALLOWED_USERS, testAuth } from "./helpers/auth";
 
 function deps(over: {
   createInstance?: unknown; deleteInstance?: unknown; connectInstance?: unknown;
@@ -35,7 +36,8 @@ function deps(over: {
       checkConnection: vi.fn(),
     } as never,
     inboundQueue: { add: vi.fn() } as never,
-    config: { webhookSecret: "s", publicWebhookUrl: "https://cb.example.com" },
+    auth: testAuth(),
+    config: { webhookSecret: "s", publicWebhookUrl: "https://cb.example.com", allowedUsers: TEST_ALLOWED_USERS },
   };
 }
 
@@ -45,7 +47,7 @@ describe("instance routes", () => {
     const d = deps({ createInstance });
     const app = buildApp(d);
 
-    const response = await app.inject({ method: "POST", url: "/instances", payload: { name: "acme" } });
+    const response = await app.inject({ method: "POST", url: "/instances", payload: { name: "acme" }, headers: AUTH_HEADERS });
 
     expect(response.statusCode).toBe(201);
     expect(response.json()).toMatchObject({ id: "inst-1", name: "acme", evolution_instance_id: "acme", status: "created" });
@@ -59,20 +61,20 @@ describe("instance routes", () => {
 
   it("POST /instances returns 502 and writes no row when Evolution fails", async () => {
     const app = buildApp(deps({ createInstance: vi.fn().mockRejectedValue(new Error("evo down")) }));
-    const response = await app.inject({ method: "POST", url: "/instances", payload: { name: "acme" } });
+    const response = await app.inject({ method: "POST", url: "/instances", payload: { name: "acme" }, headers: AUTH_HEADERS });
     expect(response.statusCode).toBe(502);
     await app.close();
   });
 
   it("POST /instances returns 400 when name is missing", async () => {
     const app = buildApp(deps());
-    expect((await app.inject({ method: "POST", url: "/instances", payload: {} })).statusCode).toBe(400);
+    expect((await app.inject({ method: "POST", url: "/instances", payload: {}, headers: AUTH_HEADERS })).statusCode).toBe(400);
     await app.close();
   });
 
   it("GET /instances/:id returns 404 when absent", async () => {
     const app = buildApp(deps({ rows: {} }));
-    expect((await app.inject({ method: "GET", url: "/instances/inst-x" })).statusCode).toBe(404);
+    expect((await app.inject({ method: "GET", url: "/instances/inst-x", headers: AUTH_HEADERS })).statusCode).toBe(404);
     await app.close();
   });
 
@@ -82,7 +84,7 @@ describe("instance routes", () => {
     const d = deps({ connectInstance, update, rows: { instances: { id: "inst-1", evolution_instance_id: "acme" } } });
     const app = buildApp(d);
 
-    const response = await app.inject({ method: "GET", url: "/instances/inst-1/qr" });
+    const response = await app.inject({ method: "GET", url: "/instances/inst-1/qr", headers: AUTH_HEADERS });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ qrcode: "data:img", pairingCode: "AB-12" });
@@ -102,7 +104,7 @@ describe("instance routes", () => {
     });
     const app = buildApp(d);
 
-    const response = await app.inject({ method: "GET", url: "/instances/inst-1/qr" });
+    const response = await app.inject({ method: "GET", url: "/instances/inst-1/qr", headers: AUTH_HEADERS });
 
     expect(response.statusCode).toBe(200);
     expect(update).not.toHaveBeenCalled();
@@ -114,7 +116,7 @@ describe("instance routes", () => {
     const d = deps({ deleteInstance, rows: { instances: { id: "inst-1", evolution_instance_id: "acme" } } });
     const app = buildApp(d);
 
-    const response = await app.inject({ method: "DELETE", url: "/instances/inst-1" });
+    const response = await app.inject({ method: "DELETE", url: "/instances/inst-1", headers: AUTH_HEADERS });
 
     expect(response.statusCode).toBe(204);
     expect(deleteInstance).toHaveBeenCalledWith("acme");

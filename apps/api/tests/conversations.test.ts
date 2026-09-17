@@ -17,6 +17,7 @@ vi.mock("@fmagentes/messaging", async (importActual) => ({
 }));
 
 import { buildApp, type AppDependencies } from "../src/app";
+import { AUTH_HEADERS, TEST_ALLOWED_USERS, testAuth } from "./helpers/auth";
 
 function baseDeps(): AppDependencies {
   return {
@@ -24,12 +25,13 @@ function baseDeps(): AppDependencies {
     supabase: {} as never,
     evolutionApi: {} as never,
     inboundQueue: { add: vi.fn() } as never,
-    config: { webhookSecret: "s", publicWebhookUrl: "https://cb.example.com" },
+    auth: testAuth(),
+    config: { webhookSecret: "s", publicWebhookUrl: "https://cb.example.com", allowedUsers: TEST_ALLOWED_USERS },
   };
 }
 
 const send = (app: ReturnType<typeof buildApp>, payload: string | object, id = "c1") =>
-  app.inject({ method: "POST", url: `/conversations/${id}/messages`, payload });
+  app.inject({ method: "POST", url: `/conversations/${id}/messages`, payload, headers: AUTH_HEADERS });
 
 beforeEach(() => sendMock.mockReset());
 

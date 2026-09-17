@@ -8,10 +8,13 @@ import { registerHealthRoute } from "./routes/health";
 import { registerWebhookRoute } from "./routes/webhooks";
 import { registerInstanceRoutes } from "./routes/instances";
 import { registerConversationRoutes } from "./routes/conversations";
+import { createAuthPreHandler, type AuthPort } from "./auth";
 
 export interface AppConfig {
   webhookSecret: string;
   publicWebhookUrl: string;
+  /** Emails or user ids permitted to call the consumer routes. Empty = deny all. */
+  allowedUsers: string[];
 }
 
 export interface AppDependencies {
@@ -19,6 +22,7 @@ export interface AppDependencies {
   supabase: SupabaseClient;
   evolutionApi: EvolutionApiClient;
   inboundQueue: Queue<InboundJobData>;
+  auth: AuthPort;
   config: AppConfig;
 }
 
@@ -37,10 +41,18 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     reply.send(error);
   });
 
+  // Public by design: /health is a probe, and the webhook carries its own
+  // apikey credential (Evolution cannot hold a user session).
   registerHealthRoute(app, deps);
   registerWebhookRoute(app, deps);
-  registerInstanceRoutes(app, deps);
-  registerConversationRoutes(app, deps);
+
+  // Consumer routes live inside an encapsulated scope, so the auth hook covers
+  // them by construction rather than by an exception list someone must maintain.
+  app.register(async (scope) => {
+    scope.addHook("preHandler", createAuthPreHandler(deps));
+    registerInstanceRoutes(scope, deps);
+    registerConversationRoutes(scope, deps);
+  });
 
   return app;
 }
