@@ -24,3 +24,8 @@ export {
 } from "./conversationLock";
 export { loadConversationHistory, DEFAULT_HISTORY_LIMIT } from "./conversationHistory";
 export { resolveAgentForConversation } from "./resolveAgent";
+export {
+  respondToInboundMessage,
+  type RespondDeps,
+  type RespondResult,
+} from "./respondToInboundMessage";
