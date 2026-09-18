@@ -29,6 +29,7 @@ interface Options {
   lockBusy?: boolean;
   messagesError?: unknown;
   sendText?: ReturnType<typeof vi.fn>;
+  conversations?: unknown;
 }
 
 function build(options: Options = {}) {
@@ -36,7 +37,8 @@ function build(options: Options = {}) {
   const supabase = createSupabaseMock({
     messages: (calls: TableCall) => {
       if (options.messagesError) return { data: null, error: options.messagesError };
-      // The duplicate guard is the only query filtering on direction=out.
+      // The duplicate guard and the history load both call `.limit()`, so `gt`
+      // must be checked before `order` — it's the only thing that tells them apart.
       const isGuard = calls.some((c) => c.op === "gt");
       if (isGuard) return { data: options.newerOutbound ?? null, error: null };
       // The history query orders; the inbound lookup does not.
@@ -54,7 +56,10 @@ function build(options: Options = {}) {
     },
     agents: () => ({ data: options.agent === undefined ? AGENT_ROW : options.agent, error: null }),
     conversations: () => ({
-      data: { id: "conv-1", contact_phone: "5511999998888", instances: { evolution_instance_id: "acme" } },
+      data:
+        options.conversations === undefined
+          ? { id: "conv-1", contact_phone: "5511999998888", instances: { evolution_instance_id: "acme" } }
+          : options.conversations,
       error: null,
     }),
   });
@@ -87,10 +92,11 @@ describe("respondToInboundMessage", () => {
   });
 
   it("throws ConversationBusyError when the lock is held", async () => {
-    const { deps, responder } = build({ lockBusy: true });
+    const { deps, responder, release } = build({ lockBusy: true });
 
     await expect(respondToInboundMessage(deps, JOB)).rejects.toBeInstanceOf(ConversationBusyError);
     expect(responder.generate).not.toHaveBeenCalled();
+    expect(release).not.toHaveBeenCalled();
   });
 
   it("skips when the inbound message no longer exists", async () => {
@@ -141,8 +147,25 @@ describe("respondToInboundMessage", () => {
 
   it("propagates an Evolution failure so BullMQ retries", async () => {
     const sendText = vi.fn().mockRejectedValue(new Error("evolution timeout"));
-    const { deps } = build({ sendText });
+    const { deps, release } = build({ sendText });
 
     await expect(respondToInboundMessage(deps, JOB)).rejects.toThrow("evolution timeout");
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it("skips when the conversation vanishes before sending", async () => {
+    const { deps, responder, evolutionApi, release } = build({ conversations: null });
+
+    await expect(respondToInboundMessage(deps, JOB)).resolves.toEqual({
+      status: "skipped",
+      reason: "message-not-found",
+    });
+    // Distinguishes this from the early "inbound message not found" skip: the
+    // pipeline reached the responder (and therefore sendMessage) before the
+    // conversation lookup inside sendMessage failed, so evolutionApi was never
+    // reached and the ConversationNotFoundError was actually caught here.
+    expect(responder.generate).toHaveBeenCalledOnce();
+    expect(evolutionApi.sendText).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledOnce();
   });
 });
