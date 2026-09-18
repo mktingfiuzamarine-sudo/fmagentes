@@ -22,3 +22,4 @@ export {
   type ConversationLock,
   type LockHandle,
 } from "./conversationLock";
+export { loadConversationHistory, DEFAULT_HISTORY_LIMIT } from "./conversationHistory";
