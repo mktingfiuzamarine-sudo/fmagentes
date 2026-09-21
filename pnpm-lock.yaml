@@ -100,6 +100,9 @@ importers:
       '@fmagentes/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@supabase/supabase-js':
+        specifier: ^2.45.4
+        version: 2.111.0
       bullmq:
         specifier: ^5.13.2
         version: 5.81.3
