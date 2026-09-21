@@ -1,5 +1,5 @@
 export type { MessagingDeps } from "./deps";
-export { INBOUND_QUEUE_NAME, createInboundQueue, type InboundJobData } from "./inboundQueue";
+export { INBOUND_QUEUE_NAME, INBOUND_JOB_OPTIONS, createInboundQueue, type InboundJobData } from "./inboundQueue";
 export {
   parseEvolutionEvent,
   type EvolutionWebhookEvent,
