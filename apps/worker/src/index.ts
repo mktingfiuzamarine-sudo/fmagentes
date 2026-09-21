@@ -36,4 +36,14 @@ worker.on("failed", (job, error) => {
   console.error(`[worker] job ${job?.id} failed`, error);
 });
 
+async function shutdown(signal: string) {
+  console.log(`[worker] received ${signal}, shutting down`);
+  await worker.close();
+  await connection.quit();
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));
+
 console.log(`[worker] listening on ${INBOUND_QUEUE_NAME} with concurrency ${WORKER_CONCURRENCY}`);

@@ -9,8 +9,6 @@ import {
 
 export const DEFAULT_BUSY_RETRY_MS = 2000;
 
-export type ProcessorResult = RespondResult | { status: "delayed" };
-
 interface Options {
   retryDelayMs?: number;
   /** Seam for tests; production always uses the real operation. */
@@ -24,7 +22,7 @@ export function createInboundProcessor(deps: RespondDeps, options: Options = {})
   return async function processInboundJob(
     job: Job<InboundJobData>,
     token?: string,
-  ): Promise<ProcessorResult> {
+  ): Promise<RespondResult> {
     try {
       const result = await respond(deps, job.data);
       console.log(`[worker] job ${job.id} message ${job.data.messageId}: ${result.status}`);

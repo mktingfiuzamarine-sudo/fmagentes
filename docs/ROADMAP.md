@@ -201,7 +201,9 @@ out       | assistant | Echo: Segunda mensagem via stub  | 2026-09-21T12:53:42Z
 ```
 
 `conversations.agent_id` was non-null throughout (auto-assigned on the first
-message).
+message). The year-apart gap between the `in` and `out` timestamps above is a
+symptom of the clock-skew debt item below — the test fixture's own
+`messageTimestamp` epoch, not a data error.
 
 Deviations from the plan, decided while executing Task 8:
 
@@ -223,9 +225,38 @@ Deviations from the plan, decided while executing Task 8:
 
 ### Debt carried forward (not in scope for sub-project 3)
 
-- `sendMessage` calls Evolution before persisting — a failed persist leaves a
-  message delivered on WhatsApp that the duplicate guard cannot see, so a
-  retry would send it twice.
+- `sendMessage` calls Evolution before persisting — a failed persist, or any
+  other interruption between the send and the persist (a killed process, a
+  redeploy, or the conversation lock's TTL lapsing before the job finishes —
+  see below), leaves a message delivered on WhatsApp that the duplicate guard
+  cannot see, so a retry would send it twice.
+- **Duplicate-answer guard uses two different clocks.**
+  `respondToInboundMessage`'s guard (`packages/messaging/src/respondToInboundMessage.ts`)
+  compares the inbound message's `created_at` — which is derived from the
+  WhatsApp webhook's own device timestamp (`ingestInboundMessage`, sub-project
+  2) — against outbound messages' `created_at`, which is the database's own
+  `now()` at insert time. These are two different clocks and can disagree (the
+  branch's own Task 8 verification evidence shows this plainly: the recorded
+  `in` rows are dated a year before the `out` row, because the test fixture
+  carried its own timestamp). If the inbound timestamp runs ahead of the
+  database clock in live traffic, the guard can fail to detect an
+  already-answered message and a retry could send a duplicate reply; if it
+  runs behind, a message could be silently skipped as already-answered. Needs
+  a DB-owned column (e.g. a `received_at timestamptz default now()`) for the
+  guard to compare against instead, or guarding by insertion order/id —
+  tracked for sub-project 4.
+- **The Redis conversation lock has no renewal/heartbeat.**
+  `apps/worker/src/redisConversationLock.ts`'s `DEFAULT_LOCK_TTL_MS` is a
+  fixed 30 seconds, sized (per its own comment) for the Evolution call "which
+  has hung in production before" — and sub-project 3's own end-to-end
+  verification (Task 8) proved that call really can time out. A job that runs
+  past the TTL loses the lock silently; a second worker can then acquire the
+  same conversation's lock and process it concurrently, and since neither job
+  has persisted an `out` row yet, the duplicate-answer guard can't catch the
+  resulting double-send either. Needs either a longer TTL or a
+  heartbeat/renewal mechanism — tracked for sub-project 4, especially since an
+  LLM-backed responder (replacing `EchoResponder`) will be slower than an echo
+  and make this more likely, not less.
 - The VPS's Evolution 2.3.1 LID bug still blocks real outbound sends; the
   pipeline's correctness was proven against a local stub instead. Upgrading or
   fixing the VPS Evolution instance remains out of scope.
