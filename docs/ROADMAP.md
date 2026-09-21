@@ -12,8 +12,8 @@ later sub-project, that's a signal to stop and reconsider, not to build it early
 |---|------|-------|--------|
 | 1 | **Fundação** | Monorepo, base Supabase schema, Redis/BullMQ wiring, API + worker + dashboard skeleton, dashboard auth. No business logic. | ✅ **Complete** (merged `bb2ecc8`, 2026-09-01) |
 | 2 | **Integração Evolution API** | Real webhook processing, sending messages, instance management. | ✅ **Complete** (merged `<pending>`, 2026-09-04) |
-| 3 | **Fila/Worker (BullMQ)** | Real business jobs: process incoming message, generate response, send response. | ▶ Next |
-| 4 | **Núcleo do Agente/LLM** | AI logic, prompt design, conversation context management. | Planned |
+| 3 | **Fila/Worker (BullMQ)** | Real business jobs: process incoming message, generate response, send response. | ✅ **Complete** (merged `<pending>`, 2026-09-21) |
+| 4 | **Núcleo do Agente/LLM** | AI logic, prompt design, conversation context management. | ▶ Next |
 | 5 | **Dashboard completo** | Functional inbox, agent management, Evolution API instance management. | Planned |
 
 ## Sub-project 1 — Fundação (done)
@@ -116,6 +116,122 @@ The dashboard needed no change — it only calls the public `/health`.
 - Remote `supabase_migrations` history has no `messaging` row — `0003` was applied
   via the SQL editor, not `supabase migration`. Reconcile with `supabase
   migration repair` if the CLI is used against this project.
+
+## Sub-project 3 — Fila/Worker (BullMQ) (done)
+
+Spec `docs/superpowers/specs/2026-09-17-fila-worker-design.md`, plan
+`docs/superpowers/plans/2026-09-17-fila-worker-implementation.md`.
+
+Delivered:
+
+- **`respondToInboundMessage`** (`packages/messaging/src/respondToInboundMessage.ts`)
+  — the orchestration that replaces the worker's logging stub: looks up the
+  inbound message and its conversation, resolves an active agent, guards
+  against answering twice, loads conversation history, generates a reply, sends
+  it, and persists it. Returns a `RespondResult` (`sent` or a `skipped` reason:
+  `message-not-found`, `no-active-agent`, `already-answered`,
+  `responder-declined`).
+- **`ResponderPort` + `EchoResponder`** (`packages/messaging/src/responder.ts`)
+  — the injected reply-generation seam. `EchoResponder` is the only
+  implementation sub-project 3 ships; it echoes the incoming text back
+  prefixed with `Echo: ` and declines (returns `null`) on blank input.
+  Sub-project 4 swaps this one class for an LLM-backed responder.
+- **Conversation history loading** (`packages/messaging/src/conversationHistory.ts`)
+  — `loadConversationHistory`, the most recent messages of a conversation,
+  oldest-first, mapped from `direction` to `role`.
+- **Agent auto-assignment** (`packages/messaging/src/resolveAgent.ts`) —
+  `resolveAgentForConversation`: a pinned agent is returned only if still
+  active (a deactivated pinned agent yields `null`, stopping the bot
+  everywhere, not just on new conversations); with no pinned agent, the
+  instance's oldest active agent is picked and persisted onto
+  `conversations.agent_id`.
+- **Redis-backed `ConversationLock`** (`apps/worker/src/redisConversationLock.ts`)
+  — serializes processing per conversation via `SET NX PX`, with a
+  nonce-checked Lua release script so a holder whose TTL expired can never
+  release the *next* holder's lock. A busy lock throws `ConversationBusyError`,
+  which the processor catches to reschedule the job (`moveToDelayed` +
+  `DelayedError`) without burning a retry attempt.
+- **Duplicate-answer guard** — before generating a reply,
+  `respondToInboundMessage` checks for any `out` message newer than the
+  inbound one; if found, it skips (`already-answered`). This is what makes
+  BullMQ retries safe.
+- **Retry with exponential backoff** — `INBOUND_JOB_OPTIONS`
+  (`packages/messaging/src/inboundQueue.ts`): 3 attempts, exponential backoff
+  starting at 1000ms, `removeOnComplete`/`removeOnFail` caps.
+- **Worker composition root** (`apps/worker/src/index.ts`) — reads env, builds
+  the Supabase and Evolution clients, wires `EchoResponder` and the Redis lock
+  into `RespondDeps`, and runs `Worker` on `inbound-messages` with
+  concurrency 5.
+
+Verification (Task 8, done against the real database — see Adaptations below):
+
+An active test agent (`Echo de teste`, `provider: echo`) was seeded onto the
+existing `smoke-test-final` instance (from sub-project 2's manual testing). A
+`messages.upsert` webhook was POSTed to the running `apps/api` against that
+instance's real phone number. The `in` row landed and `conversations.agent_id`
+was auto-assigned, proving history loading, agent resolution and the webhook
+→ queue → processor path.
+
+The **real** Evolution send was attempted first, as required: `sendText`
+against the VPS's live Evolution API (the same host used by `apps/worker/.env`
+in production) failed on all 3 retry attempts with
+`DOMException [TimeoutError]: The operation was aborted due to timeout`
+(the client's 15s `AbortSignal.timeout`). No `out` row was created — expected,
+since `sendMessage` calls Evolution before persisting. This matches the known
+VPS Evolution 2.3.1 LID bug recorded when sub-project 2 closed; it is an
+external blocker, not a defect in this pipeline.
+
+To prove the pipeline itself, the worker was pointed at a tiny local stub
+HTTP server (returning `{"key":{"id":"STUB-<timestamp>"}}`, matching
+`EvolutionApiClient.sendText`'s expected response shape) via a temporary edit
+to `apps/worker/.env` (`EVOLUTION_API_URL=http://127.0.0.1:4555`), then the
+whole `pnpm dev` stack was restarted and a second, fresh webhook message was
+POSTed to the same conversation. That run produced the full round trip: an
+`in` row, then an `out` row with content `Echo: Segunda mensagem via stub`,
+and the worker log line `[worker] job 9 message <id>: sent`. `apps/worker/.env`
+was reverted to the real Evolution values immediately after.
+
+**Evidence produced by the stub path**, not the real Evolution call:
+
+```
+direction | role      | content                          | created_at
+in        | user      | Ola, mensagem de verificacao ... | 2025-09-16T05:20:01Z
+in        | user      | Segunda mensagem via stub        | 2025-09-16T05:20:02Z
+out       | assistant | Echo: Segunda mensagem via stub  | 2026-09-21T12:53:42Z
+```
+
+`conversations.agent_id` was non-null throughout (auto-assigned on the first
+message).
+
+Deviations from the plan, decided while executing Task 8:
+
+- **Browser → script adaptation.** The plan's Task 8 assumes a human at the
+  Supabase SQL-editor browser tab. This run was autonomous, so seeding and
+  verification queries were done with a throwaway Node + `@supabase/supabase-js`
+  script (not committed) instead of pasting SQL into a browser.
+  `scripts/seed-test-agent.sql` is still committed exactly as the plan
+  specifies, as a manual-use/documentation deliverable for whoever runs this
+  by hand next.
+- **`apps/api/.env` was missing `SUPABASE_ANON_KEY` and `API_ALLOWED_USERS`**
+  (the two vars noted as a blocker when the consumer-auth hardening pass
+  landed). Both were filled in with real values (the anon key already used by
+  the dashboard; an allowlisted email) so `pnpm dev` could boot at all. The
+  file is gitignored, so this is a local-only fix, not a code change.
+- The real-Evolution attempt was retried 3 times automatically by
+  `INBOUND_JOB_OPTIONS` before the stub swap — all 3 timed out identically,
+  confirming the failure is not transient.
+
+### Debt carried forward (not in scope for sub-project 3)
+
+- `sendMessage` calls Evolution before persisting — a failed persist leaves a
+  message delivered on WhatsApp that the duplicate guard cannot see, so a
+  retry would send it twice.
+- The VPS's Evolution 2.3.1 LID bug still blocks real outbound sends; the
+  pipeline's correctness was proven against a local stub instead. Upgrading or
+  fixing the VPS Evolution instance remains out of scope.
+- `apps/api/.env` still lacks `SUPABASE_ANON_KEY` and `API_ALLOWED_USERS` in
+  version control (by design — `.env` is gitignored); anyone re-cloning the
+  repo hits the same boot blocker until they copy real values in.
 
 ## Local development notes
 
