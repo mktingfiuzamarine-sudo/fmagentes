@@ -101,8 +101,11 @@ webhook → inbound-messages queue → worker → respondToInboundMessage
 ### Package boundaries
 
 - **`packages/messaging`** stays LLM-free and CRM-free. It orchestrates and owns
-  persistence of conversations/messages. It receives the responder and a
-  `CustomerLookupPort`-shaped dependency through `RespondDeps`.
+  persistence of conversations/messages. It defines a narrow
+  `CustomerDirectoryPort { findByPhone(phone), findById(id) }` (both
+  `Promise<{ id, name } | null>`)
+  and receives an implementation (plus the responder) through `RespondDeps`.
+  It is the only writer of `conversations.crm_client_id` / `crm_link_via`.
 - **`packages/agent`** (new) depends on `@fmagentes/shared` (`getModel`) and the
   Vercel AI SDK. Units:
   - `buildPrompt(input)` — system prompt = platform instructions + customer
@@ -110,7 +113,8 @@ webhook → inbound-messages queue → worker → respondToInboundMessage
   - `tools/handoff.ts` — `transferir_para_humano({ resumo: string })`.
   - `tools/registerCustomer.ts` — `cadastrar_cliente({ nome, cpf, email })`.
   - `cpf.ts` — normalisation + check-digit validation (pure).
-  - `crm/CrmPort.ts` + `crm/supabaseCrm.ts` — the CRM adapter.
+  - `crm/CrmPort.ts` + `crm/supabaseCrm.ts` — the CRM adapter; it also
+    satisfies messaging's `CustomerDirectoryPort`.
   - `LlmResponder` — wires the above into one `generateText` call.
 - **`apps/worker`** composition root builds `LlmResponder` and the CRM adapter.
 - **`apps/api`** gains the resume route.
@@ -118,10 +122,12 @@ webhook → inbound-messages queue → worker → respondToInboundMessage
 ### Contract change: `ResponderPort`
 
 ```ts
+type LinkedCustomer = { crmClientId: string; via: "cpf" | "created" };
+
 type ResponderResult =
-  | { kind: "reply"; text: string }
-  | { kind: "handoff"; summary: string }
-  | { kind: "decline" };
+  | { kind: "reply"; text: string; linkedCustomer?: LinkedCustomer }
+  | { kind: "handoff"; summary: string; linkedCustomer?: LinkedCustomer }
+  | { kind: "decline"; linkedCustomer?: LinkedCustomer };
 
 interface ResponderInput {
   agent: AgentConfig;          // gains handoffMessage
@@ -129,14 +135,15 @@ interface ResponderInput {
   incoming: HistoryMessage;
   conversationId: string;
   contactPhone: string;
-  customer: CustomerContext;   // { status: "registered", name } | { status: "unregistered" }
+  customer: CustomerContext;   // { status: "registered", name?: string } | { status: "unregistered" }
 }
 ```
 
 `EchoResponder` is adapted (returns `reply` / `decline`) and kept for tests.
-The responder may link a customer during the call (via the tool); it reports
-that back through the CRM port's side effect on `conversations.crm_client_id`
-(see CRM), not through the result type.
+The responder may register/link a customer in the CRM during the call (via the
+tool). It reports that through `linkedCustomer`; `respondToInboundMessage`
+writes `crm_client_id` and `crm_link_via` before sending. The agent package
+never writes to the fmagentes database.
 
 ### `LlmResponder.generate`
 
@@ -185,7 +192,8 @@ rules, written by the operator).
   (existing default `'open'` kept).
 - `conversations.handoff_summary text`, `conversations.handoff_at timestamptz`.
 - `conversations.crm_client_id uuid` (no FK — it points into the CRM's
-  database).
+  database) and `conversations.crm_link_via text check (crm_link_via in
+  ('phone','cpf','created'))`.
 - `agents.handoff_message text not null default 'Vou te passar para um
   atendente, já já alguém te responde.'`.
 - `messages.received_at timestamptz not null default now()` (backfilled from
@@ -226,23 +234,27 @@ interface CrmPort {
   (ambiguous) and log.
 - **Identification** happens in `respondToInboundMessage` only when the
   conversation has no `crm_client_id`; a phone match writes `crm_client_id`
-  and later messages skip the lookup. Registered-by-phone clients get the
+  with `crm_link_via = 'phone'` and later messages skip the lookup (the name
+  for the context is then fetched by id). Registered-by-phone clients get the
   "Cliente cadastrado: {name}" context.
 - **`cadastrar_cliente`** (tool `execute`):
   1. Validate CPF check digits and e-mail format; invalid → return an error
      string to the model, which asks the customer again. Nothing written.
-  2. `findByCpf` hit → link: set `crm_client_id`; if the CRM client's `phone`
-     is empty, set it; otherwise append `Outro WhatsApp: {phone}` to `notes`.
-     Nothing else is overwritten. Return "cadastro vinculado" with **no**
-     stored data.
-  3. Miss → `create` with owner `CRM_AGENT_USER_ID`; set `crm_client_id`.
-     Return "cadastro criado".
+  2. `findByCpf` hit → `attachPhone`: if the CRM client's `phone` is empty,
+     set it; otherwise append `Outro WhatsApp: {phone}` to `notes` unless
+     `notes` already contains that number (retry-safe). Nothing else is
+     overwritten. Result `linkedCustomer: { via: "cpf" }`; the tool returns
+     "cadastro vinculado" with **no** stored data.
+  3. Miss → `create` with owner `CRM_AGENT_USER_ID`. Result
+     `linkedCustomer: { via: "created" }`; the tool returns "cadastro criado".
   4. CRM unavailable → throw (job retries; the whole message is regenerated).
+     If a create succeeded before the failure, the retry's phone lookup finds
+     the new client, so no duplicate is created.
 - **Privacy (LGPD).** Anyone can type someone else's CPF. A CPF-linked
-  conversation never receives the stored client's data: the tool returns no
-  fields, and the customer context for that conversation stays
-  "registered" **without a name** (the model keeps using what the customer
-  said). Only phone-matched clients expose the name.
+  conversation (`crm_link_via = 'cpf'`) never receives the stored client's
+  data: the tool returns no fields, and on later messages the customer context
+  is "registered" **without a name** (the model keeps using what the customer
+  said). Only `phone` and `created` links expose the name.
 
 Env (worker): `CRM_SUPABASE_URL`, `CRM_SUPABASE_SERVICE_KEY`,
 `CRM_AGENT_USER_ID`, plus `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
