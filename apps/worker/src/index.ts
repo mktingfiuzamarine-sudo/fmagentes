@@ -8,13 +8,20 @@ import { createInboundProcessor } from "./inboundProcessor";
 import { createRedisConversationLock } from "./redisConversationLock";
 
 const WORKER_CONCURRENCY = 5;
+// The CRM is reached mid-conversation (inside the model's tool calls): a hung
+// request must fail the attempt, not hold the conversation lock indefinitely.
+const CRM_REQUEST_TIMEOUT_MS = 10_000;
 
 const env = loadEnv();
 
 const connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 
 const crm = createSupabaseCrm(
-  createSupabaseClient({ url: env.CRM_SUPABASE_URL, serviceKey: env.CRM_SUPABASE_SERVICE_KEY }),
+  createSupabaseClient({
+    url: env.CRM_SUPABASE_URL,
+    serviceKey: env.CRM_SUPABASE_SERVICE_KEY,
+    timeoutMs: CRM_REQUEST_TIMEOUT_MS,
+  }),
   { agentUserId: env.CRM_AGENT_USER_ID },
 );
 
