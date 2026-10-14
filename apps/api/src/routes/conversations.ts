@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { AppDependencies } from "../app";
-import { sendMessage, ConversationNotFoundError } from "@fmagentes/messaging";
+import { sendMessage, resumeConversation, ConversationNotFoundError } from "@fmagentes/messaging";
 
 export function registerConversationRoutes(app: FastifyInstance, deps: AppDependencies): void {
   app.post("/conversations/:id/messages", async (request, reply) => {
@@ -18,6 +18,19 @@ export function registerConversationRoutes(app: FastifyInstance, deps: AppDepend
       }
       app.log.error({ err: error }, "Outbound send failed");
       return reply.code(502).send({ error: "send failed" });
+    }
+  });
+
+  app.post("/conversations/:id/resume", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      await resumeConversation(deps, id);
+      return reply.code(200).send({ id, status: "open" });
+    } catch (error) {
+      if (error instanceof ConversationNotFoundError) {
+        return reply.code(404).send({ error: "conversation not found" });
+      }
+      throw error;
     }
   });
 }

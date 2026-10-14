@@ -1,18 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { sendMock, ConversationNotFoundError } = vi.hoisted(() => {
+const { sendMock, resumeMock, ConversationNotFoundError } = vi.hoisted(() => {
   class ConversationNotFoundError extends Error {
     constructor(public readonly conversationId: string) {
       super("not found");
       this.name = "ConversationNotFoundError";
     }
   }
-  return { sendMock: vi.fn(), ConversationNotFoundError };
+  return { sendMock: vi.fn(), resumeMock: vi.fn(), ConversationNotFoundError };
 });
 
 vi.mock("@fmagentes/messaging", async (importActual) => ({
   ...(await importActual<typeof import("@fmagentes/messaging")>()),
   sendMessage: sendMock,
+  resumeConversation: resumeMock,
   ConversationNotFoundError,
 }));
 
@@ -33,7 +34,10 @@ function baseDeps(): AppDependencies {
 const send = (app: ReturnType<typeof buildApp>, payload: string | object, id = "c1") =>
   app.inject({ method: "POST", url: `/conversations/${id}/messages`, payload, headers: AUTH_HEADERS });
 
-beforeEach(() => sendMock.mockReset());
+beforeEach(() => {
+  sendMock.mockReset();
+  resumeMock.mockReset();
+});
 
 describe("POST /conversations/:id/messages", () => {
   it("201 with the sent row on success", async () => {
@@ -69,6 +73,40 @@ describe("POST /conversations/:id/messages", () => {
     });
     const app = buildApp(baseDeps());
     expect((await send(app, { text: "hi" })).statusCode).toBe(502);
+    await app.close();
+  });
+});
+
+describe("POST /conversations/:id/resume", () => {
+  const ID = "6f1c2b8e-3d4a-4e5f-9a0b-1c2d3e4f5a6b";
+  const resume = (app: ReturnType<typeof buildApp>, headers: Record<string, string> = AUTH_HEADERS) =>
+    app.inject({ method: "POST", url: `/conversations/${ID}/resume`, headers });
+
+  it("401 without a bearer token", async () => {
+    const app = buildApp(baseDeps());
+    expect((await resume(app, {})).statusCode).toBe(401);
+    expect(resumeMock).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("200 and the conversation is open again", async () => {
+    resumeMock.mockResolvedValue(undefined);
+    const app = buildApp(baseDeps());
+
+    const response = await resume(app);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ id: ID, status: "open" });
+    expect(resumeMock).toHaveBeenCalledWith(expect.anything(), ID);
+    await app.close();
+  });
+
+  it("404 when the conversation does not exist", async () => {
+    resumeMock.mockImplementationOnce(async () => {
+      throw new ConversationNotFoundError(ID);
+    });
+    const app = buildApp(baseDeps());
+    expect((await resume(app)).statusCode).toBe(404);
     await app.close();
   });
 });

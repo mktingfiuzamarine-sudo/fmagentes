@@ -42,3 +42,4 @@ export {
   type RespondDeps,
   type RespondResult,
 } from "./respondToInboundMessage";
+export { resumeConversation } from "./resumeConversation";
