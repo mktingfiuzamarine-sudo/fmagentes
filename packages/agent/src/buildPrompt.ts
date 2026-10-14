@@ -21,14 +21,21 @@ export function customerContextBlock(customer: CustomerContext): string {
  * Two system messages: the first is identical for every conversation of an
  * agent (Anthropic caches it), the second carries the per-customer context.
  * History is trimmed to what providers accept: it must start with the user and
- * contain no blank text.
+ * contain no blank text. The message being answered always comes last: history
+ * is ordered by device timestamp, so it may sort earlier or fall out of the
+ * window.
  */
 export function buildPrompt(input: {
   agent: AgentConfig;
   history: HistoryMessage[];
+  incoming: HistoryMessage;
   customer: CustomerContext;
 }): CoreMessage[] {
-  const nonBlank = input.history.filter((message) => message.content.trim().length > 0);
+  const { incoming } = input;
+  const isIncoming = (message: HistoryMessage) =>
+    message.role === "user" && message.content === incoming.content && message.createdAt === incoming.createdAt;
+  const ordered = [...input.history.filter((message) => !isIncoming(message)), incoming];
+  const nonBlank = ordered.filter((message) => message.content.trim().length > 0);
   const firstUser = nonBlank.findIndex((message) => message.role === "user");
   const history = firstUser === -1 ? [] : nonBlank.slice(firstUser);
 
