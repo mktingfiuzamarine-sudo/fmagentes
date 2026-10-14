@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadConversationHistory } from "../src/conversationHistory";
+import { loadConversationHistory, loadHistoryWindow } from "../src/conversationHistory";
 import { createSupabaseMock } from "./support/supabaseMock";
 
 function deps(rows: unknown) {
@@ -63,5 +63,41 @@ describe("loadConversationHistory", () => {
     await loadConversationHistory({ supabase } as never, "conv-1");
 
     expect(recorded).toEqual([[30]]);
+  });
+});
+
+describe("loadHistoryWindow", () => {
+  it("reports the latest inbound received_at it loaded as seenThrough", async () => {
+    const rows = [
+      { direction: "in", content: "c", created_at: "2026-09-17T10:00:01Z", received_at: "2026-09-17T10:00:05.000002+00:00" },
+      // Outbound rows never count: only what the customer said was seen.
+      { direction: "out", content: "b", created_at: "2026-09-17T10:01:00Z", received_at: "2026-09-17T10:09:00+00:00" },
+      { direction: "in", content: "a", created_at: "2026-09-17T10:00:00Z", received_at: "2026-09-17T10:00:05.000001+00:00" },
+    ];
+
+    const window = await loadHistoryWindow(deps(rows), "conv-1", 30);
+
+    expect(window.seenThrough).toBe("2026-09-17T10:00:05.000002+00:00");
+    expect(window.messages).toEqual([
+      { role: "user", content: "a", createdAt: "2026-09-17T10:00:00Z" },
+      { role: "assistant", content: "b", createdAt: "2026-09-17T10:01:00Z" },
+      { role: "user", content: "c", createdAt: "2026-09-17T10:00:01Z" },
+    ]);
+  });
+
+  it("selects received_at and reports null when no inbound was loaded", async () => {
+    let selected: unknown[] = [];
+    const supabase = createSupabaseMock({
+      messages: (calls) => {
+        selected = calls.find((c) => c.op === "select")?.args ?? [];
+        return { data: [], error: null };
+      },
+    });
+
+    await expect(loadHistoryWindow({ supabase } as never, "conv-1", 30)).resolves.toEqual({
+      messages: [],
+      seenThrough: null,
+    });
+    expect(String(selected[0])).toContain("received_at");
   });
 });

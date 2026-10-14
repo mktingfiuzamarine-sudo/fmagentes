@@ -30,8 +30,13 @@ export const INBOUND: InboundContext = {
 export interface FakeStoreOptions {
   inbound?: Partial<InboundContext> | null;
   agent?: AgentConfig | null;
+  /** Forces isAnswered; otherwise it is computed from `outboundWatermarks`. */
   answered?: boolean;
+  /** answers_through of the outbound rows already in the conversation. */
+  outboundWatermarks?: string[];
   history?: HistoryMessage[];
+  /** Defaults to INBOUND.receivedAt. */
+  seenThrough?: string | null;
 }
 
 export function createFakeStore(options: FakeStoreOptions = {}) {
@@ -41,11 +46,15 @@ export function createFakeStore(options: FakeStoreOptions = {}) {
     resolveAgent: vi.fn(async (_input: { conversationId: string; instanceId: string; agentId: string | null }) =>
       options.agent === undefined ? AGENT : options.agent,
     ),
-    hasOutboundAfter: vi.fn(async (_conversationId: string, _receivedAt: string) => options.answered ?? false),
-    loadHistory: vi.fn(
-      async (_conversationId: string, _limit: number): Promise<HistoryMessage[]> =>
-        options.history ?? [{ role: "user", content: "ola", createdAt: INBOUND.createdAt }],
+    isAnswered: vi.fn(
+      async (_conversationId: string, receivedAt: string) =>
+        options.answered ??
+        (options.outboundWatermarks ?? []).some((watermark) => Date.parse(watermark) >= Date.parse(receivedAt)),
     ),
+    loadHistory: vi.fn(async (_conversationId: string, _limit: number) => ({
+      messages: options.history ?? [{ role: "user" as const, content: "ola", createdAt: INBOUND.createdAt }],
+      seenThrough: options.seenThrough === undefined ? INBOUND.receivedAt : options.seenThrough,
+    })),
     linkCustomer: vi.fn(async (_conversationId: string, _crmClientId: string, _via: string) => {}),
     markAwaitingHuman: vi.fn(async (_conversationId: string, _handoff: { summary: string; handoffAt: string }) => {}),
   } satisfies RespondStore;

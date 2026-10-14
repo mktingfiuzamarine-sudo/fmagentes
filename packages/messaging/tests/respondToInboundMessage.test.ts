@@ -34,6 +34,7 @@ function build(options: Options = {}) {
   };
   // Only sendMessage still talks to Supabase directly: conversation lookup,
   // outbound insert, last_message_at update.
+  const inserts: Record<string, unknown>[] = [];
   const supabase = createSupabaseMock({
     conversations: () => ({
       data: options.conversationGone
@@ -41,10 +42,14 @@ function build(options: Options = {}) {
         : { id: "conv-1", contact_phone: "5511999998888", instances: { evolution_instance_id: "acme" } },
       error: null,
     }),
-    messages: () => ({
-      data: { id: "msg-out", conversation_id: "conv-1", direction: "out", content: "x", created_at: "2026-10-14T12:00:05Z" },
-      error: null,
-    }),
+    messages: (calls) => {
+      const insert = calls.find((c) => c.op === "insert");
+      if (insert) inserts.push(insert.args[0] as Record<string, unknown>);
+      return {
+        data: { id: "msg-out", conversation_id: "conv-1", direction: "out", content: "x", created_at: "2026-10-14T12:00:05Z" },
+        error: null,
+      };
+    },
   });
   const evolutionApi = { sendText: options.sendText ?? vi.fn().mockResolvedValue({ messageId: "EVO1" }) };
 
@@ -57,7 +62,7 @@ function build(options: Options = {}) {
     store,
     historyLimit: options.historyLimit,
   } as never;
-  return { deps, store, responder, release, evolutionApi, customerDirectory };
+  return { deps, store, responder, release, evolutionApi, customerDirectory, inserts };
 }
 
 describe("respondToInboundMessage", () => {
@@ -101,8 +106,69 @@ describe("respondToInboundMessage", () => {
     const { deps, store, responder } = build({ store: { answered: true } });
 
     await expect(respondToInboundMessage(deps, JOB)).resolves.toEqual({ status: "skipped", reason: "already-answered" });
-    expect(store.hasOutboundAfter).toHaveBeenCalledWith("conv-1", INBOUND.receivedAt);
+    expect(store.isAnswered).toHaveBeenCalledWith("conv-1", INBOUND.receivedAt);
     expect(responder.generate).not.toHaveBeenCalled();
+  });
+
+  describe("reply watermark", () => {
+    // M1 arrived at 12:00:00 and its job loaded history before M2 (12:00:01)
+    // existed; reply R1 was written after M2 arrived but only covers M1.
+    const M1 = { role: "user" as const, content: "oi", createdAt: "2026-10-14T12:00:00Z" };
+    const R1 = { role: "assistant" as const, content: "Olá!", createdAt: "2026-10-14T12:00:04Z" };
+    const M2 = { role: "user" as const, content: "qual o horário?", createdAt: "2026-10-14T12:00:01Z" };
+
+    it("a message received after the history load is still answered", async () => {
+      const { deps, responder, evolutionApi, inserts } = build({
+        result: { kind: "reply", text: "Das 9h às 18h." },
+        store: {
+          inbound: { messageId: "msg-2", content: M2.content, createdAt: M2.createdAt, receivedAt: "2026-10-14T12:00:01.000Z" },
+          outboundWatermarks: ["2026-10-14T12:00:00.000Z"],
+          history: [M1, M2, R1],
+          seenThrough: "2026-10-14T12:00:01.000Z",
+        },
+      });
+
+      await expect(respondToInboundMessage(deps, { ...JOB, messageId: "msg-2" })).resolves.toEqual({
+        status: "sent",
+        messageId: "msg-out",
+      });
+      expect(responder.generate).toHaveBeenCalledOnce();
+      expect(evolutionApi.sendText).toHaveBeenCalledWith("acme", "5511999998888", "Das 9h às 18h.");
+      expect(inserts).toEqual([expect.objectContaining({ answers_through: "2026-10-14T12:00:01.000Z" })]);
+    });
+
+    it("a message the previous reply already covered is skipped", async () => {
+      // R1's job saw M2 in its history: answers_through = M2.received_at.
+      const { deps, responder, evolutionApi } = build({
+        store: {
+          inbound: { messageId: "msg-2", receivedAt: "2026-10-14T12:00:01.000Z" },
+          outboundWatermarks: ["2026-10-14T12:00:01.000Z"],
+        },
+      });
+
+      await expect(respondToInboundMessage(deps, { ...JOB, messageId: "msg-2" })).resolves.toEqual({
+        status: "skipped",
+        reason: "already-answered",
+      });
+      expect(responder.generate).not.toHaveBeenCalled();
+      expect(evolutionApi.sendText).not.toHaveBeenCalled();
+    });
+
+    it("covers later inbound the history already showed the model", async () => {
+      const { deps, inserts } = build({ store: { seenThrough: "2026-10-14T12:00:03.000Z" } });
+
+      await respondToInboundMessage(deps, JOB);
+
+      expect(inserts).toEqual([expect.objectContaining({ answers_through: "2026-10-14T12:00:03.000Z" })]);
+    });
+
+    it("covers at least the message being answered when it fell out of the history window", async () => {
+      const { deps, inserts } = build({ store: { history: [], seenThrough: null } });
+
+      await respondToInboundMessage(deps, JOB);
+
+      expect(inserts).toEqual([expect.objectContaining({ answers_through: INBOUND.receivedAt })]);
+    });
   });
 
   it("skips when the responder declines", async () => {
@@ -161,6 +227,17 @@ describe("respondToInboundMessage", () => {
       );
     });
 
+    it("stamps the handoff notice with the reply watermark", async () => {
+      const { deps, inserts } = build({
+        result: { kind: "handoff", summary: "x" },
+        store: { seenThrough: "2026-10-14T12:00:03.000Z" },
+      });
+
+      await respondToInboundMessage(deps, JOB);
+
+      expect(inserts).toEqual([expect.objectContaining({ answers_through: "2026-10-14T12:00:03.000Z" })]);
+    });
+
     it("skips inbound received after the handoff without calling the model", async () => {
       const { deps, responder, evolutionApi } = build({
         store: {
@@ -185,6 +262,18 @@ describe("respondToInboundMessage", () => {
       await expect(respondToInboundMessage(deps, JOB)).resolves.toEqual({ status: "handoff", messageId: "msg-out" });
       expect(responder.generate).not.toHaveBeenCalled();
       expect(evolutionApi.sendText).toHaveBeenCalledWith("acme", "5511999998888", AGENT.handoffMessage);
+    });
+
+    it("stamps the pending notice with the triggering message's receipt time", async () => {
+      const { deps, store, inserts } = build({
+        store: { inbound: { conversationStatus: "awaiting_human", handoffAt: INBOUND.receivedAt } },
+      });
+
+      await respondToInboundMessage(deps, JOB);
+
+      expect(store.isAnswered).toHaveBeenCalledWith("conv-1", INBOUND.receivedAt);
+      expect(store.loadHistory).not.toHaveBeenCalled();
+      expect(inserts).toEqual([expect.objectContaining({ answers_through: INBOUND.receivedAt })]);
     });
 
     it("does not resend a notice that already went out", async () => {

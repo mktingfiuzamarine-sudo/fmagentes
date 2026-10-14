@@ -51,7 +51,7 @@ describe("createSupabaseRespondStore", () => {
     ).resolves.toBeNull();
   });
 
-  it("checks for outbound rows created after the inbound's received_at", async () => {
+  it("counts an inbound as answered only by an outbound whose watermark covers it", async () => {
     let recorded: TableCall = [];
     const store = storeWith({
       messages: (calls) => {
@@ -60,19 +60,42 @@ describe("createSupabaseRespondStore", () => {
       },
     });
 
-    await expect(store.hasOutboundAfter("conv-1", "2026-10-14T12:00:00Z")).resolves.toBe(true);
+    await expect(store.isAnswered("conv-1", "2026-10-14T12:00:00Z")).resolves.toBe(true);
     expect(recorded).toEqual(
       expect.arrayContaining([
         { op: "eq", args: ["conversation_id", "conv-1"] },
         { op: "eq", args: ["direction", "out"] },
-        { op: "gt", args: ["created_at", "2026-10-14T12:00:00Z"] },
+        { op: "gte", args: ["answers_through", "2026-10-14T12:00:00Z"] },
       ]),
     );
+    // created_at must play no part: a reply sent after this message arrived
+    // may still have been written without seeing it.
+    expect(recorded.some((call) => call.args[0] === "created_at")).toBe(false);
   });
 
-  it("reports no outbound when none exists", async () => {
+  it("reports unanswered when no outbound covers the inbound", async () => {
     const store = storeWith({ messages: () => ({ data: null, error: null }) });
-    await expect(store.hasOutboundAfter("conv-1", "2026-10-14T12:00:00Z")).resolves.toBe(false);
+    await expect(store.isAnswered("conv-1", "2026-10-14T12:00:00Z")).resolves.toBe(false);
+  });
+
+  it("loads history with the latest inbound received_at it saw", async () => {
+    const store = storeWith({
+      messages: () => ({
+        data: [
+          { direction: "out", content: "Oi!", created_at: "2026-10-14T12:00:02Z", received_at: "2026-10-14T12:00:09+00:00" },
+          { direction: "in", content: "ola", created_at: "2026-10-14T12:00:01Z", received_at: "2026-10-14T12:00:01.5+00:00" },
+        ],
+        error: null,
+      }),
+    });
+
+    await expect(store.loadHistory("conv-1", 30)).resolves.toEqual({
+      messages: [
+        { role: "user", content: "ola", createdAt: "2026-10-14T12:00:01Z" },
+        { role: "assistant", content: "Oi!", createdAt: "2026-10-14T12:00:02Z" },
+      ],
+      seenThrough: "2026-10-14T12:00:01.5+00:00",
+    });
   });
 
   it("writes the CRM link onto the conversation", async () => {

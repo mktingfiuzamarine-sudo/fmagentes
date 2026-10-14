@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AgentConfig, HistoryMessage } from "./responder";
-import { loadConversationHistory } from "./conversationHistory";
+import type { AgentConfig } from "./responder";
+import { loadHistoryWindow, type HistoryWindow } from "./conversationHistory";
 import { resolveAgentForConversation } from "./resolveAgent";
 import { assertNoError } from "./internal/supabaseError";
 
@@ -28,9 +28,13 @@ export interface InboundContext {
 export interface RespondStore {
   loadInbound(messageId: string): Promise<InboundContext | null>;
   resolveAgent(input: { conversationId: string; instanceId: string; agentId: string | null }): Promise<AgentConfig | null>;
-  /** Any outbound row created after `receivedAt` — both on the database clock. */
-  hasOutboundAfter(conversationId: string, receivedAt: string): Promise<boolean>;
-  loadHistory(conversationId: string, limit: number): Promise<HistoryMessage[]>;
+  /**
+   * Some outbound row's answers_through covers `receivedAt` (both on the
+   * database clock). An outbound merely created later does not count: its
+   * responder may have loaded history before this message arrived.
+   */
+  isAnswered(conversationId: string, receivedAt: string): Promise<boolean>;
+  loadHistory(conversationId: string, limit: number): Promise<HistoryWindow>;
   linkCustomer(conversationId: string, crmClientId: string, via: CrmLinkVia): Promise<void>;
   markAwaitingHuman(conversationId: string, handoff: { summary: string; handoffAt: string }): Promise<void>;
 }
@@ -87,20 +91,20 @@ export function createSupabaseRespondStore(supabase: SupabaseClient): RespondSto
 
     resolveAgent: (input) => resolveAgentForConversation(deps, input),
 
-    async hasOutboundAfter(conversationId, receivedAt) {
+    async isAnswered(conversationId, receivedAt) {
       const answered = await supabase
         .from("messages")
         .select("id")
         .eq("conversation_id", conversationId)
         .eq("direction", "out")
-        .gt("created_at", receivedAt)
+        .gte("answers_through", receivedAt)
         .limit(1)
         .maybeSingle();
       assertNoError(answered.error);
       return answered.data !== null;
     },
 
-    loadHistory: (conversationId, limit) => loadConversationHistory(deps, conversationId, limit),
+    loadHistory: (conversationId, limit) => loadHistoryWindow(deps, conversationId, limit),
 
     async linkCustomer(conversationId, crmClientId, via) {
       const result = await supabase

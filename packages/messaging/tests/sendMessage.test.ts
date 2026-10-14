@@ -45,4 +45,32 @@ describe("sendMessage", () => {
     await expect(sendMessage(deps({ sendText }), { conversationId: "conv-1", text: "hi" }))
       .rejects.toThrow("evolution 500");
   });
+
+  it("writes answers_through on the outbound row when given", async () => {
+    const inserts: unknown[] = [];
+    const supabase = createSupabaseMock({
+      conversations: () => ({
+        data: { id: "conv-1", contact_phone: "5511999998888", instances: { evolution_instance_id: "acme" } },
+        error: null,
+      }),
+      messages: (calls) => {
+        const insert = calls.find((c) => c.op === "insert");
+        if (insert) inserts.push(insert.args[0]);
+        return { data: { id: "msg-1", conversation_id: "conv-1", direction: "out", content: "hi", created_at: "x" }, error: null };
+      },
+    });
+    const evolutionApi = { sendText: vi.fn().mockResolvedValue({ messageId: "EVO1" }) };
+
+    await sendMessage({ supabase, evolutionApi } as never, {
+      conversationId: "conv-1",
+      text: "hi",
+      answersThrough: "2026-10-14T12:00:00.123456+00:00",
+    });
+    await sendMessage({ supabase, evolutionApi } as never, { conversationId: "conv-1", text: "hi" });
+
+    expect(inserts).toEqual([
+      expect.objectContaining({ answers_through: "2026-10-14T12:00:00.123456+00:00" }),
+      expect.not.objectContaining({ answers_through: expect.anything() }),
+    ]);
+  });
 });

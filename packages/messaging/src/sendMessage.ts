@@ -18,7 +18,15 @@ export class ConversationNotFoundError extends Error {
 
 export async function sendMessage(
   deps: MessagingDeps,
-  input: { conversationId: string; text: string },
+  input: {
+    conversationId: string;
+    text: string;
+    /**
+     * Agent replies only: the latest inbound received_at the responder saw.
+     * Human sends leave it null; they never mark inbound as answered.
+     */
+    answersThrough?: string;
+  },
 ): Promise<SentMessage> {
   const lookup = await deps.supabase
     .from("conversations")
@@ -46,6 +54,7 @@ export async function sendMessage(
       role: "assistant",
       content: input.text,
       evolution_message_id: sent.messageId,
+      ...(input.answersThrough !== undefined && { answers_through: input.answersThrough }),
     })
     .select("id, conversation_id, direction, content, created_at")
     .single();

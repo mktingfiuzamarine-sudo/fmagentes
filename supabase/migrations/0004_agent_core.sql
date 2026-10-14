@@ -1,5 +1,5 @@
--- Sub-project 4: agent core. Handoff state, link to the CRM client, and a
--- receipt time on the database clock for the duplicate guard.
+-- Sub-project 4: agent core. Handoff state, link to the CRM client, a
+-- receipt time on the database clock and a reply watermark for the duplicate guard.
 
 alter table conversations
   add constraint conversations_status_check check (status in ('open', 'awaiting_human')),
@@ -25,3 +25,10 @@ alter table messages
   add column received_at timestamptz not null default now();
 
 update messages set received_at = created_at;
+
+alter table messages
+  add column answers_through timestamptz;
+
+comment on column messages.answers_through is
+  'For agent outbound: the latest inbound received_at the responder had seen. '
+  'The duplicate guard treats an inbound as answered only when some outbound has answers_through >= its received_at.';

@@ -4,6 +4,7 @@ import type { CustomerContext, HistoryMessage, ResponderPort } from "./responder
 import type { CustomerDirectoryPort } from "./customerDirectory";
 import { ConversationBusyError, LockLostError, type ConversationLock, type LockHandle } from "./conversationLock";
 import { DEFAULT_HISTORY_LIMIT } from "./conversationHistory";
+import { laterTimestamp } from "./internal/timestamps";
 import { createSupabaseRespondStore, type InboundContext, type RespondStore } from "./respondStore";
 import { sendMessage, ConversationNotFoundError } from "./sendMessage";
 
@@ -45,13 +46,18 @@ export async function respondToInboundMessage(deps: RespondDeps, job: InboundJob
     const agent = await store.resolveAgent(inbound);
     if (!agent) return { status: "skipped", reason: "no-active-agent" };
 
-    // Retry safety: anything outbound after this message means a previous
-    // attempt already answered it. Both timestamps are on the database clock.
-    if (await store.hasOutboundAfter(inbound.conversationId, inbound.receivedAt)) {
+    // Retry and burst safety: answered only if some reply was generated from
+    // a history that already held this message. Database clock throughout.
+    if (await store.isAnswered(inbound.conversationId, inbound.receivedAt)) {
       return { status: "skipped", reason: "already-answered" };
     }
 
-    const history = await store.loadHistory(inbound.conversationId, deps.historyLimit ?? DEFAULT_HISTORY_LIMIT);
+    const { messages: history, seenThrough } = await store.loadHistory(
+      inbound.conversationId,
+      deps.historyLimit ?? DEFAULT_HISTORY_LIMIT,
+    );
+    // The reply answers this message even if it fell out of the window.
+    const watermark = laterTimestamp(seenThrough, inbound.receivedAt);
     const customer = await identifyCustomer(deps.customerDirectory, store, inbound);
     const incoming: HistoryMessage = { role: "user", content: inbound.content, createdAt: inbound.createdAt };
 
@@ -72,7 +78,7 @@ export async function respondToInboundMessage(deps: RespondDeps, job: InboundJob
       case "decline":
         return { status: "skipped", reason: "responder-declined" };
       case "reply": {
-        const messageId = await sendGuarded(deps, lock, inbound.conversationId, result.text);
+        const messageId = await sendGuarded(deps, lock, inbound.conversationId, result.text, watermark);
         return messageId ? { status: "sent", messageId } : MESSAGE_NOT_FOUND;
       }
       case "handoff": {
@@ -83,7 +89,7 @@ export async function respondToInboundMessage(deps: RespondDeps, job: InboundJob
           summary: result.summary,
           handoffAt: inbound.receivedAt,
         });
-        const messageId = await sendGuarded(deps, lock, inbound.conversationId, agent.handoffMessage);
+        const messageId = await sendGuarded(deps, lock, inbound.conversationId, agent.handoffMessage, watermark);
         return messageId ? { status: "handoff", messageId } : MESSAGE_NOT_FOUND;
       }
     }
@@ -110,11 +116,11 @@ async function sendPendingHandoffNotice(
   const agent = await store.resolveAgent(inbound);
   if (!agent) return { status: "skipped", reason: "no-active-agent" };
 
-  if (await store.hasOutboundAfter(inbound.conversationId, inbound.receivedAt)) {
+  if (await store.isAnswered(inbound.conversationId, inbound.receivedAt)) {
     return { status: "skipped", reason: "already-answered" };
   }
 
-  const messageId = await sendGuarded(deps, lock, inbound.conversationId, agent.handoffMessage);
+  const messageId = await sendGuarded(deps, lock, inbound.conversationId, agent.handoffMessage, inbound.receivedAt);
   return messageId ? { status: "handoff", messageId } : MESSAGE_NOT_FOUND;
 }
 
@@ -143,10 +149,11 @@ async function sendGuarded(
   lock: LockHandle,
   conversationId: string,
   text: string,
+  answersThrough: string,
 ): Promise<string | null> {
   if (lock.isLost()) throw new LockLostError(conversationId);
   try {
-    const sent = await sendMessage(deps, { conversationId, text });
+    const sent = await sendMessage(deps, { conversationId, text, answersThrough });
     return sent.id;
   } catch (error) {
     // The conversation vanished mid-flight; retrying cannot fix that.
