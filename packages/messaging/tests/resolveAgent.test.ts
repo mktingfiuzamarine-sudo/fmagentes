@@ -8,6 +8,7 @@ const AGENT_ROW = {
   provider: "anthropic",
   model: "claude-opus-5",
   system_prompt: "Seja breve.",
+  handoff_message: "Já te passo.",
 };
 
 const EXPECTED = {
@@ -16,6 +17,7 @@ const EXPECTED = {
   provider: "anthropic",
   model: "claude-opus-5",
   systemPrompt: "Seja breve.",
+  handoffMessage: "Já te passo.",
 };
 
 function deps(agentRow: unknown, onConversationUpdate?: (calls: TableCall) => void) {

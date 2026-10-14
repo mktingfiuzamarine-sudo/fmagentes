@@ -2,7 +2,7 @@ import type { MessagingDeps } from "./deps";
 import type { HistoryMessage } from "./responder";
 import { assertNoError } from "./internal/supabaseError";
 
-export const DEFAULT_HISTORY_LIMIT = 20;
+export const DEFAULT_HISTORY_LIMIT = 30;
 
 interface MessageRow {
   direction: "in" | "out";
@@ -16,7 +16,7 @@ interface MessageRow {
  * array is reversed before returning.
  */
 export async function loadConversationHistory(
-  deps: MessagingDeps,
+  deps: Pick<MessagingDeps, "supabase">,
   conversationId: string,
   limit: number = DEFAULT_HISTORY_LIMIT,
 ): Promise<HistoryMessage[]> {

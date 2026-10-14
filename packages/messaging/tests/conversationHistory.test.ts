@@ -49,4 +49,19 @@ describe("loadConversationHistory", () => {
     });
     await expect(loadConversationHistory({ supabase } as never, "conv-1")).rejects.toThrow("boom");
   });
+
+  it("defaults to the 30 most recent messages", async () => {
+    const recorded: unknown[][] = [];
+    const supabase = createSupabaseMock({
+      messages: (calls) => {
+        const limitCall = calls.find((c) => c.op === "limit");
+        if (limitCall) recorded.push(limitCall.args);
+        return { data: [], error: null };
+      },
+    });
+
+    await loadConversationHistory({ supabase } as never, "conv-1");
+
+    expect(recorded).toEqual([[30]]);
+  });
 });

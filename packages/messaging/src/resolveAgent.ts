@@ -2,7 +2,7 @@ import type { MessagingDeps } from "./deps";
 import type { AgentConfig } from "./responder";
 import { assertNoError } from "./internal/supabaseError";
 
-const AGENT_COLUMNS = "id, name, provider, model, system_prompt";
+const AGENT_COLUMNS = "id, name, provider, model, system_prompt, handoff_message";
 
 interface AgentRow {
   id: string;
@@ -10,6 +10,7 @@ interface AgentRow {
   provider: string;
   model: string;
   system_prompt: string;
+  handoff_message: string;
 }
 
 function toConfig(row: AgentRow): AgentConfig {
@@ -19,6 +20,7 @@ function toConfig(row: AgentRow): AgentConfig {
     provider: row.provider,
     model: row.model,
     systemPrompt: row.system_prompt,
+    handoffMessage: row.handoff_message,
   };
 }
 
@@ -30,7 +32,7 @@ function toConfig(row: AgentRow): AgentConfig {
  * not just on new conversations.
  */
 export async function resolveAgentForConversation(
-  deps: MessagingDeps,
+  deps: Pick<MessagingDeps, "supabase">,
   input: { conversationId: string; instanceId: string; agentId: string | null },
 ): Promise<AgentConfig | null> {
   if (input.agentId) {

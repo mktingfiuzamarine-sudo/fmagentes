@@ -11,11 +11,23 @@ export { ingestInboundMessage, type IngestResult } from "./ingestInboundMessage"
 export { sendMessage, ConversationNotFoundError, type SentMessage } from "./sendMessage";
 export {
   EchoResponder,
+  ResponderConfigurationError,
   type AgentConfig,
+  type CustomerContext,
   type HistoryMessage,
+  type LinkedCustomer,
   type ResponderInput,
   type ResponderPort,
+  type ResponderResult,
 } from "./responder";
+export type { CustomerDirectoryPort, DirectoryCustomer } from "./customerDirectory";
+export {
+  createSupabaseRespondStore,
+  type ConversationStatus,
+  type CrmLinkVia,
+  type InboundContext,
+  type RespondStore,
+} from "./respondStore";
 export {
   ConversationBusyError,
   LockLostError,
