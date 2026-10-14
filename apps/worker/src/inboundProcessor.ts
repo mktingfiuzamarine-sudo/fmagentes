@@ -1,6 +1,7 @@
-import { DelayedError, type Job } from "bullmq";
+import { DelayedError, UnrecoverableError, type Job } from "bullmq";
 import {
   ConversationBusyError,
+  ResponderConfigurationError,
   respondToInboundMessage,
   type InboundJobData,
   type RespondDeps,
@@ -34,6 +35,11 @@ export function createInboundProcessor(deps: RespondDeps, options: Options = {})
         // BullMQ completes the job and the reschedule is silently dropped.
         await job.moveToDelayed(Date.now() + retryDelayMs, token);
         throw new DelayedError();
+      }
+      if (error instanceof ResponderConfigurationError) {
+        // A wrong key, provider or model will fail every attempt; stop retrying.
+        console.error(`[worker] agent ${error.agentId} is misconfigured: ${error.message}`);
+        throw new UnrecoverableError(error.message);
       }
       throw error;
     }

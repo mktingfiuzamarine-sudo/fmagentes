@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fmagentes/agent": "workspace:*",
     "@fmagentes/config": "workspace:*",
     "@fmagentes/messaging": "workspace:*",
     "@fmagentes/shared": "workspace:*",

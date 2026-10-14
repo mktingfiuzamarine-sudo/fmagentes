@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { DelayedError, type Job } from "bullmq";
-import { ConversationBusyError, type InboundJobData } from "@fmagentes/messaging";
+import { DelayedError, UnrecoverableError, type Job } from "bullmq";
+import { ConversationBusyError, ResponderConfigurationError, type InboundJobData } from "@fmagentes/messaging";
 import { createInboundProcessor } from "../src/inboundProcessor";
 
 const DATA: InboundJobData = { messageId: "m1", conversationId: "c1", instanceId: "i1" };
@@ -46,5 +46,17 @@ describe("createInboundProcessor", () => {
     const process = createInboundProcessor({} as never, { respond: respond as never });
 
     await expect(process(job(), "tok")).rejects.toThrow("supabase down");
+  });
+
+  it("fails a misconfigured agent permanently and names the agent", async () => {
+    const respond = vi.fn(async () => {
+      throw new ResponderConfigurationError("agent-9", "LLM rejected agent agent-9 with HTTP 401");
+    });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const process = createInboundProcessor({} as never, { respond: respond as never });
+
+    await expect(process(job(), "tok")).rejects.toBeInstanceOf(UnrecoverableError);
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining("agent-9"));
+    logged.mockRestore();
   });
 });

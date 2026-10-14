@@ -1,7 +1,8 @@
 import { Redis } from "ioredis";
 import { Worker } from "bullmq";
 import { createSupabaseClient, createEvolutionApiClient } from "@fmagentes/shared";
-import { EchoResponder, INBOUND_QUEUE_NAME, type RespondDeps } from "@fmagentes/messaging";
+import { INBOUND_QUEUE_NAME, type RespondDeps } from "@fmagentes/messaging";
+import { LlmResponder, createSupabaseCrm } from "@fmagentes/agent";
 import { loadEnv } from "./env";
 import { createInboundProcessor } from "./inboundProcessor";
 import { createRedisConversationLock } from "./redisConversationLock";
@@ -12,15 +13,25 @@ const env = loadEnv();
 
 const connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 
+const crm = createSupabaseCrm(
+  createSupabaseClient({ url: env.CRM_SUPABASE_URL, serviceKey: env.CRM_SUPABASE_SERVICE_KEY }),
+  { agentUserId: env.CRM_AGENT_USER_ID },
+);
+
 const deps: RespondDeps = {
   supabase: createSupabaseClient({ url: env.SUPABASE_URL, serviceKey: env.SUPABASE_SERVICE_KEY }),
   evolutionApi: createEvolutionApiClient({
     baseUrl: env.EVOLUTION_API_URL,
     apiKey: env.EVOLUTION_API_KEY,
   }),
-  // Sub-project 4 swaps this one line for the LLM-backed responder.
-  responder: new EchoResponder(),
+  responder: new LlmResponder({
+    llm: { anthropicApiKey: env.ANTHROPIC_API_KEY, openaiApiKey: env.OPENAI_API_KEY },
+    crm,
+  }),
+  // The CRM adapter also serves as messaging's read-only customer directory.
+  customerDirectory: crm,
   conversationLock: createRedisConversationLock(connection),
+  historyLimit: env.AGENT_HISTORY_LIMIT,
 };
 
 const worker = new Worker(INBOUND_QUEUE_NAME, createInboundProcessor(deps), {

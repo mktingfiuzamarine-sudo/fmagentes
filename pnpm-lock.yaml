@@ -91,6 +91,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@fmagentes/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@fmagentes/config':
         specifier: workspace:*
         version: link:../../packages/config
