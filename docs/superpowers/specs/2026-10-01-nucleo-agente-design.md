@@ -38,7 +38,7 @@ guard's two-clock comparison and the conversation lock's missing renewal.
 - Lock heartbeat/renewal; LLM call timeout.
 - **CRM repository (`C:\Users\Dell\Desktop\aula`, GitHub
   `mktingfiuzamarine-sudo/agentes_ia`)**: `cpf` + `phone_digits` columns, CPF
-  in the client form and table, the fixed "Agente WhatsApp" user.
+  in the client form and table.
 
 **Out of scope**
 - RAG / knowledge base (future sub-project; it will plug in as another tool).
@@ -74,8 +74,10 @@ Recorded with the rejected options so they are not relitigated.
    before registration.
 8. **CRM registration.** Identification is deterministic code (phone lookup);
    registration is the model plus a tool whose input the code validates.
-   Required fields: name, CPF, e-mail. Owner of agent-created clients: one fixed
-   CRM user (`CRM_AGENT_USER_ID`). The CRM is accessed directly through its own
+   Required fields: name, CPF, e-mail. Owner of agent-created clients: one
+   designated **human** CRM user (`CRM_AGENT_USER_ID`) — the CRM shows each
+   user only their own clients, so a dedicated agent user would hide them.
+   The CRM has several users; the one who handles WhatsApp leads is chosen. The CRM is accessed directly through its own
    Supabase project with its service key, behind a `CrmPort` so an API can
    replace the adapter later.
 
@@ -206,8 +208,8 @@ rules, written by the operator).
 - `clients.phone_digits text generated always as
   (regexp_replace(coalesce(phone,''), '\D', '', 'g')) stored` + index.
   Application code must never write it (same rule as `search_vector`).
-- The fixed user "Agente WhatsApp" is created in the CRM's Auth (manual step,
-  documented); its id goes into `CRM_AGENT_USER_ID`.
+- No new CRM user. `CRM_AGENT_USER_ID` is the Auth id of an existing human
+  CRM user (the one who handles WhatsApp leads) — a manual, documented step.
 
 ### CRM UI (repo `aula`)
 
@@ -245,8 +247,12 @@ interface CrmPort {
      `notes` already contains that number (retry-safe). Nothing else is
      overwritten. Result `linkedCustomer: { via: "cpf" }`; the tool returns
      "cadastro vinculado" with **no** stored data.
-  3. Miss → `create` with owner `CRM_AGENT_USER_ID`. Result
+  3. Miss → `create` with owner `CRM_AGENT_USER_ID` and `notes` =
+     `Cadastrado pelo agente WhatsApp`, so the origin is visible in the CRM. Result
      `linkedCustomer: { via: "created" }`; the tool returns "cadastro criado".
+  CPF uniqueness and the phone lookup are global (service key), so a match can
+  be a client owned by another CRM user; it is linked anyway and stays with
+  its owner.
   4. CRM unavailable → throw (job retries; the whole message is regenerated).
      If a create succeeded before the failure, the retry's phone lookup finds
      the new client, so no duplicate is created.
@@ -299,7 +305,7 @@ the agent sees them in history after resume.
   network, no cost): reply; handoff; handoff + text (handoff wins); decline on
   blank; transient error rethrown; configuration error → unrecoverable;
   `cadastrar_cliente` invalid CPF / invalid e-mail / CPF hit (link, no data
-  returned, phone vs notes) / CPF miss (create with agent owner). `cpf.ts`
+  returned, phone vs notes) / CPF miss (create with `CRM_AGENT_USER_ID` + origin note). `cpf.ts`
   pure tests. `buildPrompt` for both customer contexts. Supabase CRM adapter
   phone matching (with/without ninth digit, ambiguous) against a mocked client.
 - **`packages/messaging`** — existing tests moved to the new contract; new:
@@ -314,8 +320,8 @@ the agent sees them in history after resume.
 - **End-to-end (manual, recorded in ROADMAP)** — real LLM (Claude Haiku 4.5),
   real fmagentes + CRM databases, Evolution replaced by the local stub (LID
   bug). Scenarios:
-  1. New phone → agent asks name/CPF/e-mail → client created in the CRM with
-     the agent owner → question answered from the prompt.
+  1. New phone → agent asks name/CPF/e-mail → client created in the CRM owned
+     by the designated user, with the origin note, → question answered from the prompt.
   2. Known phone → greeted by name, no registration asked.
   3. Customer asks for a human → basics collected (or insisted) → notice sent,
      conversation `awaiting_human` with a summary; next inbound skipped.
