@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { envSchema } from "../src/env";
+import { envSchema, llmKeyWarning } from "../src/env";
 
 const BASE = {
   REDIS_URL: "redis://localhost:6379",
@@ -30,5 +30,18 @@ describe("worker envSchema", () => {
 
   it("rejects a zero history limit", () => {
     expect(envSchema.safeParse({ ...BASE, AGENT_HISTORY_LIMIT: "0" }).success).toBe(false);
+  });
+});
+
+describe("llmKeyWarning", () => {
+  it("warns when no LLM key is configured", () => {
+    expect(llmKeyWarning(envSchema.parse(BASE))).toBe(
+      "[worker] no LLM API key configured; every agent will fail as misconfigured",
+    );
+  });
+
+  it("stays quiet when either key is set", () => {
+    expect(llmKeyWarning(envSchema.parse({ ...BASE, ANTHROPIC_API_KEY: "sk-ant" }))).toBeNull();
+    expect(llmKeyWarning(envSchema.parse({ ...BASE, OPENAI_API_KEY: "sk-oa" }))).toBeNull();
   });
 });

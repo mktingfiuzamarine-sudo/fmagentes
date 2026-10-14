@@ -3,7 +3,7 @@ import { Worker } from "bullmq";
 import { createSupabaseClient, createEvolutionApiClient } from "@fmagentes/shared";
 import { INBOUND_QUEUE_NAME, type RespondDeps } from "@fmagentes/messaging";
 import { LlmResponder, createSupabaseCrm } from "@fmagentes/agent";
-import { loadEnv } from "./env";
+import { llmKeyWarning, loadEnv } from "./env";
 import { createInboundProcessor } from "./inboundProcessor";
 import { createRedisConversationLock } from "./redisConversationLock";
 
@@ -13,6 +13,9 @@ const WORKER_CONCURRENCY = 5;
 const CRM_REQUEST_TIMEOUT_MS = 10_000;
 
 const env = loadEnv();
+
+const missingKey = llmKeyWarning(env);
+if (missingKey) console.warn(missingKey);
 
 const connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 

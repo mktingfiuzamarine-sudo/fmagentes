@@ -20,3 +20,9 @@ export const envSchema = z.object({
 
 export const loadEnv = createEnvLoader(envSchema);
 export type Env = ReturnType<typeof loadEnv>;
+
+/** Both LLM keys are optional, but with neither every agent fails as misconfigured. */
+export function llmKeyWarning(env: Pick<Env, "ANTHROPIC_API_KEY" | "OPENAI_API_KEY">): string | null {
+  if (env.ANTHROPIC_API_KEY || env.OPENAI_API_KEY) return null;
+  return "[worker] no LLM API key configured; every agent will fail as misconfigured";
+}
