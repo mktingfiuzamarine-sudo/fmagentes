@@ -93,7 +93,8 @@ export function createSupabaseCrm(
       if (current.phone && digitsOf(current.phone) === phoneDigits) return;
       if (current.notes?.includes(phoneDigits)) return;
 
-      const line = `Outro WhatsApp: ${phone}`;
+      // Unverified: whoever typed this CPF may not be the client.
+      const line = `Outro WhatsApp (não verificado): ${phone}`;
       const notes = current.notes ? `${current.notes}\n${line}` : line;
       const result = await supabase.from("clients").update({ notes }).eq("id", clientId);
       throwIfError(result.error);

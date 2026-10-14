@@ -25,7 +25,8 @@ export interface CrmPort {
   /** Throws CrmCpfTakenError when the CPF already exists. */
   create(input: NewCrmClient): Promise<CrmClient>;
   /**
-   * Records the extra WhatsApp number in notes; never writes phone — a CPF
+   * Records the extra WhatsApp number in notes as `Outro WhatsApp (não
+   * verificado): {phone}` (deduped by digits); never writes phone — a CPF
    * typed by a stranger must not make their number identify the client.
    */
   attachPhone(clientId: string, phone: string): Promise<void>;

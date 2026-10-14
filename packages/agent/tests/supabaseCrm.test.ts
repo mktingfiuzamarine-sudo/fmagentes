@@ -112,24 +112,30 @@ describe("createSupabaseCrm", () => {
     it("notes the number even when the phone is empty (never writes phone)", async () => {
       const { crm, updates } = attachScenario({ phone: "  ", notes: null });
       await crm.attachPhone("crm-1", "5511988887777");
-      expect(updates).toEqual([{ notes: "Outro WhatsApp: 5511988887777" }]);
+      expect(updates).toEqual([{ notes: "Outro WhatsApp (não verificado): 5511988887777" }]);
     });
 
     it("notes the number when phone is null and notes exist (never writes phone)", async () => {
       const { crm, updates } = attachScenario({ phone: null, notes: "VIP" });
       await crm.attachPhone("crm-1", "5511988887777");
-      expect(updates).toEqual([{ notes: "VIP\nOutro WhatsApp: 5511988887777" }]);
+      expect(updates).toEqual([{ notes: "VIP\nOutro WhatsApp (não verificado): 5511988887777" }]);
     });
 
     it("appends a note when the client already has another phone", async () => {
       const { crm, updates } = attachScenario({ phone: "(11) 3333-4444", notes: "VIP" });
       await crm.attachPhone("crm-1", "5511988887777");
-      expect(updates).toEqual([{ notes: "VIP\nOutro WhatsApp: 5511988887777" }]);
+      expect(updates).toEqual([{ notes: "VIP\nOutro WhatsApp (não verificado): 5511988887777" }]);
     });
 
     it("does nothing when the note is already there (retry)", async () => {
-      const { crm, updates } = attachScenario({ phone: "(11) 3333-4444", notes: "Outro WhatsApp: 5511988887777" });
+      const { crm, updates } = attachScenario({ phone: "(11) 3333-4444", notes: "Outro WhatsApp (não verificado): 5511988887777" });
       await crm.attachPhone("crm-1", "5511988887777");
+      expect(updates).toEqual([]);
+    });
+
+    it("dedupes by digits, whatever the note around them says", async () => {
+      const { crm, updates } = attachScenario({ phone: null, notes: "Outro WhatsApp: 5511988887777" });
+      await crm.attachPhone("crm-1", "+55 (11) 98888-7777");
       expect(updates).toEqual([]);
     });
 
