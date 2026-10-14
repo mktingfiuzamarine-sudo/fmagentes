@@ -10,3 +10,4 @@ export {
   registerCustomer,
   type RegistrationOutcome,
 } from "./tools/registerCustomer";
+export { LlmResponder, DEFAULT_LLM_TIMEOUT_MS, MAX_STEPS, type LlmResponderOptions } from "./LlmResponder";

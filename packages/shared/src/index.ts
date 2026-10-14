@@ -7,4 +7,4 @@ export {
   type EvolutionApiClient,
 } from "./evolutionApiClient";
 export { INSTANCE_STATUS, mapConnectionState, type InstanceStatusValue } from "./instanceStatus";
-export { getModel, type LlmConfig, type LlmProvider } from "./llm";
+export { getModel, type LlmConfig, type LlmProvider, type ModelOptions } from "./llm";

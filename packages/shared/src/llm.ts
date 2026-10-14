@@ -9,10 +9,22 @@ export interface LlmConfig {
   openaiApiKey: string;
 }
 
-export function getModel(config: LlmConfig, provider: LlmProvider, modelName: string): LanguageModel {
+export interface ModelOptions {
+  /** Anthropic only: honour cacheControl metadata on prompt messages. */
+  cacheControl?: boolean;
+}
+
+export function getModel(
+  config: LlmConfig,
+  provider: LlmProvider,
+  modelName: string,
+  options: ModelOptions = {},
+): LanguageModel {
   switch (provider) {
     case "anthropic":
-      return createAnthropic({ apiKey: config.anthropicApiKey })(modelName);
+      return createAnthropic({ apiKey: config.anthropicApiKey })(modelName, {
+        cacheControl: options.cacheControl ?? false,
+      });
     case "openai":
       return createOpenAI({ apiKey: config.openaiApiKey })(modelName);
     default: {

@@ -29,8 +29,13 @@ describe("getModel", () => {
     const model = getModel(config, "anthropic", "claude-opus-4-8");
 
     expect(createAnthropicMock).toHaveBeenCalledWith({ apiKey: "a-key" });
-    expect(anthropicModelFactory).toHaveBeenCalledWith("claude-opus-4-8");
+    expect(anthropicModelFactory).toHaveBeenCalledWith("claude-opus-4-8", { cacheControl: false });
     expect(model).toBe("anthropic-model");
+  });
+
+  it("enables Anthropic prompt caching when asked", () => {
+    getModel(config, "anthropic", "claude-haiku-4-5", { cacheControl: true });
+    expect(anthropicModelFactory).toHaveBeenCalledWith("claude-haiku-4-5", { cacheControl: true });
   });
 
   it("returns an OpenAI model when provider is openai", () => {
