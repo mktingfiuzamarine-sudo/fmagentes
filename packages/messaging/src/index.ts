@@ -18,6 +18,7 @@ export {
 } from "./responder";
 export {
   ConversationBusyError,
+  LockLostError,
   noopLock,
   type ConversationLock,
   type LockHandle,

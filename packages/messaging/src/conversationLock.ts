@@ -1,4 +1,9 @@
 export interface LockHandle {
+  /**
+   * True once a renewal found the lock expired or taken by someone else. The
+   * holder must not perform any side effect (send, handoff persist) after this.
+   */
+  isLost(): boolean;
   release(): Promise<void>;
 }
 
@@ -19,9 +24,20 @@ export class ConversationBusyError extends Error {
   }
 }
 
+/**
+ * Thrown right before a side effect when the lock was lost mid-job. The job
+ * fails and BullMQ retries it; the duplicate guard protects the retry.
+ */
+export class LockLostError extends Error {
+  constructor(public readonly conversationId: string) {
+    super(`Conversation lock lost before a side effect: ${conversationId}`);
+    this.name = "LockLostError";
+  }
+}
+
 /** Always acquires. For unit tests and single-process local runs. */
 export const noopLock: ConversationLock = {
   async acquire() {
-    return { async release() {} };
+    return { isLost: () => false, async release() {} };
   },
 };
