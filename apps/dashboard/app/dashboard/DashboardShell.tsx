@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/browserApi";
 import { createClient } from "../../lib/supabase/client";
 import { usePolling } from "../../lib/usePolling";
+import { formatTabTitle } from "../../lib/format";
 import { resetMe, useMe } from "../../lib/useMe";
 import type { InboxResponse } from "../../lib/types";
 import ui from "./ui.module.css";
@@ -21,12 +22,13 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { me } = useMe();
-  const { data } = usePolling(() => apiFetch<InboxResponse>("/conversations?view=handoff"), "shell-counts");
+  const { data } = usePolling(() => apiFetch<InboxResponse>("/conversations?view=handoff"), "shell-counts", undefined, { hiddenIntervalMs: 60_000 });
   const handoffs = data?.counts.handoff ?? 0;
 
   useEffect(() => {
-    document.title = handoffs > 0 ? `(${handoffs}) fmagentes` : "fmagentes";
-  }, [handoffs]);
+    // Next re-applies metadata.title on client navigation, so re-run on pathname and each poll result.
+    document.title = formatTabTitle(handoffs);
+  }, [handoffs, data, pathname]);
 
   async function signOut() {
     resetMe();

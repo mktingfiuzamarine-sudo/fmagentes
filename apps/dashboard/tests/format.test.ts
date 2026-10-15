@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPhone, formatRelative } from "../lib/format";
+import { formatPhone, formatTabTitle, formatRelative } from "../lib/format";
 
 describe("formatPhone", () => {
   it("formats Brazilian mobile and landline numbers with country code", () => {
@@ -21,5 +21,12 @@ describe("formatRelative", () => {
   });
   it("treats future timestamps (clock skew) as now", () => {
     expect(formatRelative("2026-10-15T12:00:30Z", now)).toBe("agora");
+  });
+});
+
+describe("formatTabTitle", () => {
+  it("prefixes the handoff count only when positive", () => {
+    expect(formatTabTitle(3)).toBe("(3) fmagentes");
+    expect(formatTabTitle(0)).toBe("fmagentes");
   });
 });

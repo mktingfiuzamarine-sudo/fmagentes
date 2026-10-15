@@ -23,3 +23,8 @@ export function formatRelative(iso: string, now: Date = new Date()): string {
   if (seconds < 86400) return `${Math.floor(seconds / 3600)} h`;
   return `${Math.floor(seconds / 86400)} d`;
 }
+
+/** Browser tab title: "(N) fmagentes" while N conversations await a human. */
+export function formatTabTitle(handoffs: number): string {
+  return handoffs > 0 ? `(${handoffs}) fmagentes` : "fmagentes";
+}

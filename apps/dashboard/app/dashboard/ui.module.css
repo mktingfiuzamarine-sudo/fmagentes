@@ -51,4 +51,5 @@
   .inboxHasSelection .list { display: none; }
   .inboxNoSelection .pane { display: none; }
   .backLink { display: inline-block; }
+  .inboxHasSelection .pane { height: calc(100vh - 150px); height: calc(100dvh - 150px); min-height: 360px; }
 }
