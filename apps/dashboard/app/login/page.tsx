@@ -22,7 +22,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/dashboard");
+    router.push("/dashboard/inbox");
     router.refresh();
   }
 
