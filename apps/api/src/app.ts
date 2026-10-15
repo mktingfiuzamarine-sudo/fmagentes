@@ -8,6 +8,10 @@ import { registerHealthRoute } from "./routes/health";
 import { registerWebhookRoute } from "./routes/webhooks";
 import { registerInstanceRoutes } from "./routes/instances";
 import { registerConversationRoutes } from "./routes/conversations";
+import type { DashboardStore } from "./dashboard/store";
+import { createSupabaseDashboardStore } from "./dashboard/supabaseStore";
+import type { CustomerNamePort } from "./dashboard/customerNames";
+import { registerMeRoute } from "./routes/me";
 import { createAuthPreHandler, type AuthPort } from "./auth";
 
 export interface AppConfig {
@@ -15,6 +19,8 @@ export interface AppConfig {
   publicWebhookUrl: string;
   /** Emails or user ids permitted to call the consumer routes. Empty = deny all. */
   allowedUsers: string[];
+  /** Which LLM keys the API has; assumed equal to the worker's. */
+  providers?: { anthropic: boolean; openai: boolean };
 }
 
 export interface AppDependencies {
@@ -24,6 +30,14 @@ export interface AppDependencies {
   inboundQueue: Queue<InboundJobData>;
   auth: AuthPort;
   config: AppConfig;
+  /** Defaults to the Supabase store over `supabase`. */
+  dashboard?: DashboardStore;
+  /** Absent when the CRM env vars are not set. */
+  customerNames?: CustomerNamePort;
+}
+
+export function dashboardStore(deps: AppDependencies): DashboardStore {
+  return deps.dashboard ?? createSupabaseDashboardStore(deps.supabase);
 }
 
 export function buildApp(deps: AppDependencies): FastifyInstance {
@@ -52,6 +66,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     scope.addHook("preHandler", createAuthPreHandler(deps));
     registerInstanceRoutes(scope, deps);
     registerConversationRoutes(scope, deps);
+    registerMeRoute(scope, deps);
   });
 
   return app;

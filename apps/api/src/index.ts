@@ -2,6 +2,7 @@ import { Redis } from "ioredis";
 import { createSupabaseClient, createEvolutionApiClient } from "@fmagentes/shared";
 import { createInboundQueue } from "@fmagentes/messaging";
 import { buildApp } from "./app";
+import { createSupabaseCustomerNames } from "./dashboard/customerNames";
 import { createSupabaseAuthPort } from "./auth";
 import { loadEnv } from "./env";
 
@@ -26,16 +27,28 @@ if (allowedUsers.length === 0) {
   throw new Error("API_ALLOWED_USERS is set but lists no usable entry — every request would be rejected with 403.");
 }
 
+const customerNames =
+  env.CRM_SUPABASE_URL && env.CRM_SUPABASE_SERVICE_KEY
+    ? createSupabaseCustomerNames(
+        createSupabaseClient({ url: env.CRM_SUPABASE_URL, serviceKey: env.CRM_SUPABASE_SERVICE_KEY, timeoutMs: 10_000 }),
+      )
+    : undefined;
+
 const app = buildApp({
   redis,
   supabase,
   evolutionApi,
   inboundQueue,
   auth,
+  customerNames,
   config: {
     webhookSecret: env.WEBHOOK_SECRET,
     publicWebhookUrl: env.PUBLIC_WEBHOOK_URL,
     allowedUsers,
+    providers: {
+      anthropic: Boolean(env.ANTHROPIC_API_KEY?.trim()),
+      openai: Boolean(env.OPENAI_API_KEY?.trim()),
+    },
   },
 });
 
