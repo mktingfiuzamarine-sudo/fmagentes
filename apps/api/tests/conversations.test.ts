@@ -31,7 +31,8 @@ function baseDeps(): AppDependencies {
   };
 }
 
-const send = (app: ReturnType<typeof buildApp>, payload: string | object, id = "c1") =>
+const CID = "6f1c2b8e-3d4a-4e5f-9a0b-1c2d3e4f5a6b";
+const send = (app: ReturnType<typeof buildApp>, payload: string | object, id = CID) =>
   app.inject({ method: "POST", url: `/conversations/${id}/messages`, payload, headers: AUTH_HEADERS });
 
 beforeEach(() => {
@@ -41,10 +42,18 @@ beforeEach(() => {
 
 describe("POST /conversations/:id/messages", () => {
   it("records the caller as the sender", async () => {
-    sendMock.mockResolvedValue({ id: "m1", conversationId: "c1", direction: "out", content: "hi", createdAt: "x" });
+    sendMock.mockResolvedValue({ id: "m1", conversationId: CID, direction: "out", content: "hi", createdAt: "x" });
     const app = buildApp(baseDeps());
     await send(app, { text: "hi" });
-    expect(sendMock).toHaveBeenCalledWith(expect.anything(), { conversationId: "c1", text: "hi", sentBy: "test-user" });
+    expect(sendMock).toHaveBeenCalledWith(expect.anything(), { conversationId: CID, text: "hi", sentBy: "test-user" });
+    await app.close();
+  });
+
+  it("404 for a malformed id without calling sendMessage", async () => {
+    const app = buildApp(baseDeps());
+    expect((await send(app, {}, "not-a-uuid")).statusCode).toBe(404);
+    expect((await send(app, { text: "hi" }, "c1")).statusCode).toBe(404);
+    expect(sendMock).not.toHaveBeenCalled();
     await app.close();
   });
 
@@ -56,7 +65,7 @@ describe("POST /conversations/:id/messages", () => {
     await app.close();
   });
   it("201 with the sent row on success", async () => {
-    sendMock.mockResolvedValue({ id: "m1", conversationId: "c1", direction: "out", content: "hi", createdAt: "2026-09-02T00:00:00Z" });
+    sendMock.mockResolvedValue({ id: "m1", conversationId: CID, direction: "out", content: "hi", createdAt: "2026-09-02T00:00:00Z" });
     const app = buildApp(baseDeps());
 
     const response = await send(app, { text: "hi" });
@@ -75,7 +84,7 @@ describe("POST /conversations/:id/messages", () => {
 
   it("404 when the conversation does not exist", async () => {
     sendMock.mockImplementationOnce(async () => {
-      throw new ConversationNotFoundError("c1");
+      throw new ConversationNotFoundError(CID);
     });
     const app = buildApp(baseDeps());
     expect((await send(app, { text: "hi" })).statusCode).toBe(404);

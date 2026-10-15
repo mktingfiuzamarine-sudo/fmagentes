@@ -52,6 +52,10 @@ const app = buildApp({
   },
 });
 
+if (Boolean(env.CRM_SUPABASE_URL) !== Boolean(env.CRM_SUPABASE_SERVICE_KEY)) {
+  app.log.warn("CRM_SUPABASE_URL and CRM_SUPABASE_SERVICE_KEY must both be set; customer names are disabled");
+}
+
 app.listen({ port: env.API_PORT, host: "0.0.0.0" }).catch((error) => {
   app.log.error(error);
   process.exit(1);

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { AppDependencies } from "../app";
+import { isUuid } from "../dashboard/uuid";
 import { sendMessage, resumeConversation, ConversationNotFoundError } from "@fmagentes/messaging";
 
 const MAX_REPLY_LENGTH = 4096;
@@ -7,6 +8,7 @@ const MAX_REPLY_LENGTH = 4096;
 export function registerConversationRoutes(app: FastifyInstance, deps: AppDependencies): void {
   app.post("/conversations/:id/messages", async (request, reply) => {
     const { id } = request.params as { id: string };
+    if (!isUuid(id)) return reply.code(404).send({ error: "conversation not found" });
     const body = request.body as { text?: unknown } | null;
     const text = body && typeof body.text === "string" ? body.text.trim() : "";
     if (!text) return reply.code(400).send({ error: "text is required" });

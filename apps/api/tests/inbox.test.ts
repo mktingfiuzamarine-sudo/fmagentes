@@ -76,6 +76,19 @@ describe("GET /conversations", () => {
     await app.close();
   });
 
+  it("truncation never splits a surrogate pair", async () => {
+    const long = "x".repeat(138) + "😀" + "y".repeat(50);
+    const store = fakeDashboardStore({
+      listInbox: vi.fn().mockResolvedValue([inboxRow({ lastMessage: { direction: "out", content: long, createdAt: "t" } })]),
+    });
+    const app = buildApp(deps(store));
+    const content = (await get(app, "/conversations?view=all")).json().items[0].lastMessage.content as string;
+    expect(Array.from(content)).toHaveLength(140);
+    expect(content.endsWith("…")).toBe(true);
+    expect(/[�-�](?![�-�])/.test(content)).toBe(false);
+    await app.close();
+  });
+
   it("unknown assignee falls back to the id", async () => {
     const store = fakeDashboardStore({ listInbox: vi.fn().mockResolvedValue([inboxRow({ assignedTo: "gone" })]) });
     const app = buildApp(deps(store));

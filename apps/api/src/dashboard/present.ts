@@ -15,7 +15,8 @@ function person(id: string | null, names: Map<string, string>): Person | null {
 }
 
 function truncate(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+  const chars = Array.from(text);
+  return chars.length <= max ? text : `${chars.slice(0, max - 1).join("")}…`;
 }
 
 export function toListItem(row: InboxRow, names: Map<string, string>) {
