@@ -9,7 +9,7 @@ import { usePolling } from "../../../lib/usePolling";
 import type { ChatMessage, ConversationDetail, Me } from "../../../lib/types";
 import ui from "../ui.module.css";
 
-type Confirm = { text: string; action: () => Promise<void> } | null;
+type Confirm = { text: string; kind: "send" | "assign" | "resume" } | null;
 
 function bubbleClass(message: ChatMessage): string {
   if (message.direction === "in") return ui.fromCustomer;
@@ -64,9 +64,9 @@ export function ConversationPane(props: { id: string; me: Me; onBack(): void; on
   function requestSend() {
     if (!text.trim()) return;
     if (gate === "assume-first") {
-      setConfirm({ text: "Ninguém assumiu esta conversa. Responder sem assumir?", action: send });
+      setConfirm({ text: "Ninguém assumiu esta conversa. Responder sem assumir?", kind: "send" });
     } else if (gate === "warn-other-owner") {
-      setConfirm({ text: `${owner?.displayName} está atendendo. Responder mesmo assim?`, action: send });
+      setConfirm({ text: `${owner?.displayName} está atendendo. Responder mesmo assim?`, kind: "send" });
     } else {
       void send();
     }
@@ -74,7 +74,7 @@ export function ConversationPane(props: { id: string; me: Me; onBack(): void; on
 
   function requestAssign() {
     if (owner && owner.id !== props.me.id) {
-      setConfirm({ text: `${owner.displayName} está atendendo. Assumir no lugar?`, action: assign });
+      setConfirm({ text: `${owner.displayName} está atendendo. Assumir no lugar?`, kind: "assign" });
     } else {
       void assign();
     }
@@ -112,7 +112,7 @@ export function ConversationPane(props: { id: string; me: Me; onBack(): void; on
               type="button"
               className={ui.secondary}
               disabled={busy}
-              onClick={() => setConfirm({ text: "Devolver esta conversa ao bot? Ele volta a responder o cliente.", action: resume })}
+              onClick={() => setConfirm({ text: "Devolver esta conversa ao bot? Ele volta a responder o cliente.", kind: "resume" })}
             >
               Devolver ao bot
             </button>
@@ -138,7 +138,7 @@ export function ConversationPane(props: { id: string; me: Me; onBack(): void; on
             type="button"
             className={ui.button}
             onClick={() => {
-              const action = confirm.action;
+              const action = confirm.kind === "send" ? send : confirm.kind === "assign" ? assign : resume;
               setConfirm(null);
               void action();
             }}
@@ -156,10 +156,11 @@ export function ConversationPane(props: { id: string; me: Me; onBack(): void; on
             className={ui.textarea}
             value={text}
             maxLength={4096}
+            disabled={busy || confirm !== null}
             placeholder="Escreva a resposta…"
             onChange={(event) => setText(event.target.value)}
           />
-          <button type="button" className={ui.button} disabled={busy || !text.trim()} onClick={requestSend}>
+          <button type="button" className={ui.button} disabled={busy || confirm !== null || !text.trim()} onClick={requestSend}>
             {failure && text ? "Tentar de novo" : "Enviar"}
           </button>
         </div>
