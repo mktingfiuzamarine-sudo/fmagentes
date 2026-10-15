@@ -40,6 +40,21 @@ beforeEach(() => {
 });
 
 describe("POST /conversations/:id/messages", () => {
+  it("records the caller as the sender", async () => {
+    sendMock.mockResolvedValue({ id: "m1", conversationId: "c1", direction: "out", content: "hi", createdAt: "x" });
+    const app = buildApp(baseDeps());
+    await send(app, { text: "hi" });
+    expect(sendMock).toHaveBeenCalledWith(expect.anything(), { conversationId: "c1", text: "hi", sentBy: "test-user" });
+    await app.close();
+  });
+
+  it("400 for whitespace-only or over-4096-character text", async () => {
+    const app = buildApp(baseDeps());
+    expect((await send(app, { text: "   " })).statusCode).toBe(400);
+    expect((await send(app, { text: "a".repeat(4097) })).statusCode).toBe(400);
+    expect(sendMock).not.toHaveBeenCalled();
+    await app.close();
+  });
   it("201 with the sent row on success", async () => {
     sendMock.mockResolvedValue({ id: "m1", conversationId: "c1", direction: "out", content: "hi", createdAt: "2026-09-02T00:00:00Z" });
     const app = buildApp(baseDeps());

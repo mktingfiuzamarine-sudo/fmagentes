@@ -12,6 +12,7 @@ import type { DashboardStore } from "./dashboard/store";
 import { createSupabaseDashboardStore } from "./dashboard/supabaseStore";
 import type { CustomerNamePort } from "./dashboard/customerNames";
 import { registerMeRoute } from "./routes/me";
+import { registerInboxRoutes } from "./routes/inbox";
 import { createAuthPreHandler, type AuthPort } from "./auth";
 
 export interface AppConfig {
@@ -67,6 +68,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     registerInstanceRoutes(scope, deps);
     registerConversationRoutes(scope, deps);
     registerMeRoute(scope, deps);
+    registerInboxRoutes(scope, deps);
   });
 
   return app;
