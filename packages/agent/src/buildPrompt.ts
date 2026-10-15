@@ -14,7 +14,9 @@ export function customerContextBlock(customer: CustomerContext): string {
   if (customer.status === "unregistered") {
     return "Cliente SEM cadastro. Antes de prosseguir com o atendimento, peça nome completo, CPF e e-mail e chame cadastrar_cliente.";
   }
-  return customer.name ? `Cliente cadastrado: ${customer.name}.` : "Cliente cadastrado.";
+  return customer.name
+    ? `Cliente cadastrado: ${customer.name}. Trate o cliente pelo nome.`
+    : "Cliente cadastrado.";
 }
 
 /**

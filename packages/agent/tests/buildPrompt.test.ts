@@ -17,7 +17,7 @@ const assistant = (content: string, n = 0): HistoryMessage => ({ role: "assistan
 
 describe("customerContextBlock", () => {
   it("names a registered customer", () => {
-    expect(customerContextBlock({ status: "registered", name: "Ana Souza" })).toBe("Cliente cadastrado: Ana Souza.");
+    expect(customerContextBlock({ status: "registered", name: "Ana Souza" })).toBe("Cliente cadastrado: Ana Souza. Trate o cliente pelo nome.");
   });
 
   it("omits the name when there is none (CPF link)", () => {
