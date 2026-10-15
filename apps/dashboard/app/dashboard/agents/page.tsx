@@ -41,7 +41,7 @@ export default function AgentsPage() {
       {row && me ? (
         <div className={ui.card} style={{ marginTop: 16 }}>
           <AgentForm
-            key={row.instance.id + (row.agent?.id ?? "")}
+            key={row.instance.id}
             instance={row.instance}
             agent={row.agent}
             providers={me.providers}
