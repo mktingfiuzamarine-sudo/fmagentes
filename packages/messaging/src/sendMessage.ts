@@ -26,6 +26,8 @@ export async function sendMessage(
      * Human sends leave it null; they never mark inbound as answered.
      */
     answersThrough?: string;
+    /** Human sends only: auth.users.id of the attendant. */
+    sentBy?: string;
   },
 ): Promise<SentMessage> {
   const lookup = await deps.supabase
@@ -55,6 +57,7 @@ export async function sendMessage(
       content: input.text,
       evolution_message_id: sent.messageId,
       ...(input.answersThrough !== undefined && { answers_through: input.answersThrough }),
+      ...(input.sentBy !== undefined && { sent_by: input.sentBy }),
     })
     .select("id, conversation_id, direction, content, created_at")
     .single();

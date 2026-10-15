@@ -18,7 +18,7 @@ describe("resumeConversation", () => {
     await resumeConversation({ supabase } as never, ID);
 
     expect(recorded).toEqual([
-      { op: "update", args: [{ status: "open", handoff_summary: null, handoff_at: null }] },
+      { op: "update", args: [{ status: "open", handoff_summary: null, handoff_at: null, assigned_to: null, assigned_at: null }] },
       { op: "eq", args: ["id", ID] },
       { op: "select", args: ["id"] },
     ]);

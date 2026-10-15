@@ -5,9 +5,9 @@ import { assertNoError } from "./internal/supabaseError";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Hands a conversation back to the agent. Idempotent: resuming an open
- * conversation succeeds. A malformed id is "not found" rather than a uuid cast
- * error from Postgres.
+ * Hands a conversation back to the agent and clears its handoff and
+ * assignment. Idempotent: resuming an open conversation succeeds. A malformed
+ * id is "not found" rather than a uuid cast error from Postgres.
  */
 export async function resumeConversation(
   deps: Pick<MessagingDeps, "supabase">,
@@ -17,7 +17,7 @@ export async function resumeConversation(
 
   const result = await deps.supabase
     .from("conversations")
-    .update({ status: "open", handoff_summary: null, handoff_at: null })
+    .update({ status: "open", handoff_summary: null, handoff_at: null, assigned_to: null, assigned_at: null })
     .eq("id", conversationId)
     .select("id");
   assertNoError(result.error);

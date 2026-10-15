@@ -73,4 +73,25 @@ describe("sendMessage", () => {
       expect.not.objectContaining({ answers_through: expect.anything() }),
     ]);
   });
+
+  it("writes sent_by on the outbound row when a human sends", async () => {
+    const inserts: unknown[] = [];
+    const supabase = createSupabaseMock({
+      conversations: () => ({
+        data: { id: "conv-1", contact_phone: "5511999998888", instances: { evolution_instance_id: "acme" } },
+        error: null,
+      }),
+      messages: (calls) => {
+        const insert = calls.find((c) => c.op === "insert");
+        if (insert) inserts.push(insert.args[0]);
+        return { data: { id: "msg-1", conversation_id: "conv-1", direction: "out", content: "hi", created_at: "x" }, error: null };
+      },
+    });
+    const evolutionApi = { sendText: vi.fn().mockResolvedValue({ messageId: "EVO1" }) };
+
+    await sendMessage({ supabase, evolutionApi } as never, { conversationId: "conv-1", text: "hi", sentBy: "user-1" });
+
+    expect(inserts).toEqual([expect.objectContaining({ sent_by: "user-1" })]);
+    expect(inserts[0]).not.toHaveProperty("answers_through");
+  });
 });
