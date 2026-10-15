@@ -443,11 +443,12 @@ Evolution stub on `127.0.0.1:4555`, API without CRM vars.
   panel, per-user RLS, Realtime, taking over non-handed-off conversations.
 - Provider availability is inferred from the API env, not the worker's.
 - `fromMe` messages still not persisted.
-- Found in e2e: the tab title loses its `(N)` prefix after a client-side
-  navigation when the count does not change; on narrow screens the conversation
-  opens at the oldest message (the page scrolls, not the history box); polling
-  pauses in hidden tabs (by design, but a background tab never updates its
-  title count).
+- Found in e2e and fixed before merge (`4123e8d`): the tab title lost its `(N)`
+  prefix after client-side navigation (now re-applied on each poll and route
+  change — selecting a conversation restores it within one poll); on narrow
+  screens the conversation opened at the oldest message (the pane now has a
+  bounded height); a background tab never updated its count (the shell's count
+  poll now runs every 60 s while hidden — the list and pane still pause).
 - `apps/api/tests/inbox.test.ts` emoji-truncation test cannot fail (its regex
   holds a literal U+FFFD); the code fix itself is correct.
 - Smaller deferred items from the review ledger: shell polls the full handoff
