@@ -46,11 +46,11 @@ describe("createRedisConversationLock", () => {
   it("releases only its own hold, never a successor's", async () => {
     const id = randomUUID();
     // renewEveryMs: 0 simulates a holder that crashed and stopped renewing.
-    const shortLived = createRedisConversationLock(redis, 60, { renewEveryMs: 0 });
+    const shortLived = createRedisConversationLock(redis, 300, { renewEveryMs: 0 });
 
     const first = await shortLived.acquire(id);
     expect(first).not.toBeNull();
-    await wait(120); // let the TTL expire
+    await wait(450); // let the TTL expire
 
     const second = await shortLived.acquire(id);
     expect(second).not.toBeNull();
@@ -64,10 +64,10 @@ describe("createRedisConversationLock", () => {
 
   it("expires the lock on its own when the holder stops renewing", async () => {
     const id = randomUUID();
-    const shortLived = createRedisConversationLock(redis, 60, { renewEveryMs: 0 });
+    const shortLived = createRedisConversationLock(redis, 300, { renewEveryMs: 0 });
 
     expect(await shortLived.acquire(id)).not.toBeNull();
-    await wait(120);
+    await wait(450);
     const later = await shortLived.acquire(id);
     expect(later).not.toBeNull();
     await later!.release();
