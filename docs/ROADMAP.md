@@ -365,8 +365,9 @@ clients "Bruno Teste" and "Carla Mendes" (`(11) 90000-0002`) remain.
   new conversations until a human copies the number.
 - Agent-created CRM clients store the phone as raw digits (`5511900000001`),
   not the `(11) 9…` format humans type.
-- `redisConversationLock` heartbeat test has tight timing margins and flaked
-  once under the parallel full-suite run (green alone).
+- `redisConversationLock` tests rely on wall-clock margins; the expiry tests
+  flaked under the parallel full suite until their TTL went 60 → 300 ms
+  (`d3236a5`). The heartbeat test (150 ms TTL) still has tight margins.
 - Task 11 CRM browser check (CPF field/column in the UI) was not done.
 - Smaller deferred items (notes dedupe on formatted numbers, CRM outage fails
   already-linked conversations, tool `execute` ignores the abort signal, etc.)
