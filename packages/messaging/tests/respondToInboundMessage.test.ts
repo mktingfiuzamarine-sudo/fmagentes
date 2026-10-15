@@ -276,6 +276,27 @@ describe("respondToInboundMessage", () => {
       expect(inserts).toEqual([expect.objectContaining({ answers_through: INBOUND.receivedAt })]);
     });
 
+    it("stamps a notice sent by an earlier burst message with the handoff time", async () => {
+      // Message A (earlier) and trigger T (handoff_at) were both in flight when
+      // T's send failed. A's job sends the notice; it must cover T too, or T's
+      // retry would send a second notice.
+      const { deps, store, inserts } = build({
+        store: {
+          inbound: {
+            messageId: "msg-a",
+            conversationStatus: "awaiting_human",
+            receivedAt: "2026-10-14T11:59:59.500Z",
+            handoffAt: "2026-10-14T12:00:00.000Z",
+          },
+        },
+      });
+
+      await respondToInboundMessage(deps, { ...JOB, messageId: "msg-a" });
+
+      expect(store.isAnswered).toHaveBeenCalledWith("conv-1", "2026-10-14T11:59:59.500Z");
+      expect(inserts).toEqual([expect.objectContaining({ answers_through: "2026-10-14T12:00:00.000Z" })]);
+    });
+
     it("does not resend a notice that already went out", async () => {
       const { deps, evolutionApi } = build({
         store: { inbound: { conversationStatus: "awaiting_human", handoffAt: INBOUND.receivedAt }, answered: true },

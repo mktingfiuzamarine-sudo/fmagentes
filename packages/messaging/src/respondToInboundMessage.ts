@@ -120,7 +120,10 @@ async function sendPendingHandoffNotice(
     return { status: "skipped", reason: "already-answered" };
   }
 
-  const messageId = await sendGuarded(deps, lock, inbound.conversationId, agent.handoffMessage, inbound.receivedAt);
+  // One notice covers everything up to the trigger: stamp it with handoff_at so
+  // the trigger's own retry (or an earlier burst message's job) sees it as answered.
+  const answersThrough = inbound.handoffAt ?? inbound.receivedAt;
+  const messageId = await sendGuarded(deps, lock, inbound.conversationId, agent.handoffMessage, answersThrough);
   return messageId ? { status: "handoff", messageId } : MESSAGE_NOT_FOUND;
 }
 
