@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/browserApi";
 import { createClient } from "../../lib/supabase/client";
 import { usePolling } from "../../lib/usePolling";
-import { useMe } from "../../lib/useMe";
+import { resetMe, useMe } from "../../lib/useMe";
 import type { InboxResponse } from "../../lib/types";
 import ui from "./ui.module.css";
 
@@ -29,6 +29,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   }, [handoffs]);
 
   async function signOut() {
+    resetMe();
     await createClient().auth.signOut();
     router.push("/login");
     router.refresh();
