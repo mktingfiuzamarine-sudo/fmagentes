@@ -13,8 +13,8 @@ later sub-project, that's a signal to stop and reconsider, not to build it early
 | 1 | **Fundação** | Monorepo, base Supabase schema, Redis/BullMQ wiring, API + worker + dashboard skeleton, dashboard auth. No business logic. | ✅ **Complete** (merged `bb2ecc8`, 2026-09-01) |
 | 2 | **Integração Evolution API** | Real webhook processing, sending messages, instance management. | ✅ **Complete** (merged `<pending>`, 2026-09-04) |
 | 3 | **Fila/Worker (BullMQ)** | Real business jobs: process incoming message, generate response, send response. | ✅ **Complete** (merged `<pending>`, 2026-09-21) |
-| 4 | **Núcleo do Agente/LLM** | AI logic, prompt design, conversation context management. | ▶ Next |
-| 5 | **Dashboard completo** | Functional inbox, agent management, Evolution API instance management. | Planned |
+| 4 | **Núcleo do Agente/LLM** | AI logic, prompt design, conversation context management. | ✅ **Complete** (merged `<pending>`, 2026-10-14) |
+| 5 | **Dashboard completo** | Functional inbox, agent management, Evolution API instance management. | ▶ Next |
 
 ## Sub-project 1 — Fundação (done)
 
@@ -230,7 +230,7 @@ Deviations from the plan, decided while executing Task 8:
   redeploy, or the conversation lock's TTL lapsing before the job finishes —
   see below), leaves a message delivered on WhatsApp that the duplicate guard
   cannot see, so a retry would send it twice.
-- **Duplicate-answer guard uses two different clocks.**
+- ✅ **Paid by sub-project 4** (`messages.received_at` + `answers_through`). **Duplicate-answer guard uses two different clocks.**
   `respondToInboundMessage`'s guard (`packages/messaging/src/respondToInboundMessage.ts`)
   compares the inbound message's `created_at` — which is derived from the
   WhatsApp webhook's own device timestamp (`ingestInboundMessage`, sub-project
@@ -245,7 +245,7 @@ Deviations from the plan, decided while executing Task 8:
   a DB-owned column (e.g. a `received_at timestamptz default now()`) for the
   guard to compare against instead, or guarding by insertion order/id —
   tracked for sub-project 4.
-- **The Redis conversation lock has no renewal/heartbeat.**
+- ✅ **Paid by sub-project 4** (lock heartbeat, `LockLostError`). **The Redis conversation lock has no renewal/heartbeat.**
   `apps/worker/src/redisConversationLock.ts`'s `DEFAULT_LOCK_TTL_MS` is a
   fixed 30 seconds, sized (per its own comment) for the Evolution call "which
   has hung in production before" — and sub-project 3's own end-to-end
@@ -263,6 +263,114 @@ Deviations from the plan, decided while executing Task 8:
 - `apps/api/.env` still lacks `SUPABASE_ANON_KEY` and `API_ALLOWED_USERS` in
   version control (by design — `.env` is gitignored); anyone re-cloning the
   repo hits the same boot blocker until they copy real values in.
+
+## Sub-project 4 — Núcleo do Agente/LLM (done)
+
+Spec: `docs/superpowers/specs/2026-10-01-nucleo-agente-design.md`. Plan:
+`docs/superpowers/plans/2026-10-01-nucleo-agente-implementation.md`. Branch
+`feat/nucleo-agente` (fmagentes) + `feat/cpf-cliente` (CRM repo `aula`).
+
+**Agent package.** New `packages/agent`: `LlmResponder` implements messaging's
+`ResponderPort` with one `generateText` call per inbound (Anthropic or OpenAI per
+agent row, `maxSteps: 3`, `maxRetries: 0`, 45 s timeout) and two tools,
+`cadastrar_cliente` and `transferir_para_humano`. `buildPrompt` sends platform
+instructions + the agent's prompt as a cached system block, then a per-customer
+block, then trimmed history (`AGENT_HISTORY_LIMIT`, default 30) with the message
+being answered always last. Configuration errors (unknown provider, missing key)
+become BullMQ `UnrecoverableError`; the worker warns at startup when no LLM key
+is set.
+
+**Handoff.** `transferir_para_humano` persists `awaiting_human` + summary +
+`handoff_at` before sending the agent's `handoff_message`; while awaiting, the
+worker skips (`awaiting-human`) anything received after `handoff_at`.
+`POST /conversations/:id/resume` reopens the conversation and clears the handoff
+fields; human replies sent through `POST /conversations/:id/messages` are in the
+agent's history afterwards.
+
+**CRM.** The worker reads/writes the CRM's Supabase (separate project, service
+key, 10 s timeout) through `CustomerDirectoryPort`: lookup by phone (with/without
+country code and ninth digit, mobiles only), registration with name + CPF +
+e-mail, linking an existing client by CPF. Conversations record
+`crm_client_id` + `crm_link_via` (`phone` | `cpf` | `created`). CRM migration
+009 adds `clients.cpf` (11 digits, globally unique) and generated
+`phone_digits`; the CRM UI gained a validated CPF field and column.
+
+**Debts paid.** Sub-project 3's two-clock guard (now `messages.received_at` on
+the DB clock plus the reply watermark `messages.answers_through`) and lock
+without renewal (heartbeat + `LockLostError`). Migration `0004_agent_core.sql`.
+
+### End-to-end evidence (2026-10-14)
+
+Real fmagentes + CRM databases, real LLM, Evolution replaced by a local stub
+(VPS LID bug). **The Anthropic account had no credit**, so the run used
+`openai` / `gpt-4o-mini` instead of the planned `claude-haiku-4-5`; Anthropic
+prompt caching is therefore unverified live. Jobs 15–23, none failed.
+
+1. **New customer** (`5511900000001`): asked hours → answered 9h–18h and asked
+   name/CPF/e-mail → sent "Bruno Teste, 529.982.247-25, bruno.teste@example.com"
+   → "Seu cadastro foi criado com sucesso!". CRM row `Bruno Teste`,
+   `cpf 52998224725`, owner = `CRM_AGENT_USER_ID`, notes `Cadastrado pelo
+   agente WhatsApp`; conversation `crm_link_via = created`.
+2. **Known phone** (`5511900000002`, CRM client "Carla Mendes"): linked
+   `crm_link_via = phone`, no registration asked. The first two replies did not
+   use the name although it was in the prompt; fixed by appending "Trate o
+   cliente pelo nome." to the registered-customer block (`d8193e4`), after
+   which: "Oi, Carla! Tudo bem, e você?".
+3. **Handoff**: "Quero falar com um atendente" → agent asked once what it was
+   about → insisted with a quote request → stub got the handoff message;
+   `status = awaiting_human`, summary "Cliente Carla Mendes deseja um orçamento
+   de 10 coletes salva-vidas sob encomenda."; "Alguém aí?" → `skipped`, no send.
+4. **Resume**: human reply via the API (201, sent through the stub) → `/resume`
+   (200, `open`, handoff fields cleared) → "E o prazo de entrega?" → "As
+   entregas são feitas em até 7 dias úteis…"; its `answers_through` also covers
+   the "Alguém aí?" left during the handoff.
+
+Seeded agent left in place: "Atendente de teste" on `smoke-test-final`
+(`openai` / `gpt-4o-mini`; switch to `anthropic` / `claude-haiku-4-5` once the
+account has credit); the old "Echo de teste" agent is deactivated. CRM test
+clients "Bruno Teste" and "Carla Mendes" (`(11) 90000-0002`) remain.
+
+### Refinements to the spec (decided while planning/executing)
+
+1. `handoff_at` = the triggering inbound's `received_at` (one clock, no RPC).
+2. System prompt split into a cached block and a per-customer block.
+3. `cadastrar_cliente` is offered only to unregistered customers.
+4. `CrmPort.findById`.
+5. `ResponderConfigurationError` → BullMQ `UnrecoverableError`.
+6. `RespondStore` extracted from `respondToInboundMessage` (fake in tests).
+7. Duplicate guard is the reply watermark `answers_through >= received_at`
+   (spec and plan text still describe the older "any outbound after"
+   guard). Consequence: a human send through the API no longer suppresses an
+   agent retry.
+8. The agent never writes the CRM `phone` column; a CPF-linked number goes to
+   notes as `Outro WhatsApp (não verificado): {phone}` (spec/plan say
+   `Outro WhatsApp: {phone}` and "fill empty phone") — otherwise a stranger
+   typing someone's CPF would plant their number in `phone_digits` and later be
+   greeted as that client.
+9. Registered customers are told to be addressed by name (e2e finding).
+
+### Debt carried forward (not in scope for sub-project 4)
+
+- `fromMe` messages are not persisted (needs `sendMessage` to persist before
+  sending); `sendMessage` still sends before persisting.
+- Failed-after-3-attempts LLM jobs leave the customer unanswered with no alert.
+- Non-retryable provider errors (no credit, bad key, invalid request —
+  `isRetryable: false`) are still retried 3 times; a 401 on the CRM key is also
+  retried as transient. Should map to `UnrecoverableError`.
+- Retry backoff (1 s exponential) is too short for LLM 429 rate limits.
+- RLS `using (true)` in fmagentes; the CRM service key bypasses CRM RLS.
+- The VPS Evolution 2.3.1 LID bug still blocks real sends.
+- `crm_link_via = 'cpf'` is unverified (anyone can type a CPF): flag it in the
+  sub-project 5 inbox. A customer linked by CPF is not recognised by phone in
+  new conversations until a human copies the number.
+- Agent-created CRM clients store the phone as raw digits (`5511900000001`),
+  not the `(11) 9…` format humans type.
+- `redisConversationLock` heartbeat test has tight timing margins and flaked
+  once under the parallel full-suite run (green alone).
+- Task 11 CRM browser check (CPF field/column in the UI) was not done.
+- Smaller deferred items (notes dedupe on formatted numbers, CRM outage fails
+  already-linked conversations, tool `execute` ignores the abort signal, etc.)
+  are listed in the plan's review ledger.
 
 ## Local development notes
 
