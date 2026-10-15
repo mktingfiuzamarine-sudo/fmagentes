@@ -9,7 +9,7 @@ import { AgentForm } from "./AgentForm";
 import ui from "../ui.module.css";
 
 export default function AgentsPage() {
-  const me = useMe();
+  const { me, error: meError } = useMe();
   const list = usePolling(() => apiFetch<AgentListRow[]>("/agents"), "agents", 60_000);
   const [selected, setSelected] = useState<string | null>(null);
   const row = list.data?.find((r) => r.instance.id === selected) ?? null;
@@ -38,6 +38,11 @@ export default function AgentsPage() {
           ))}
         </tbody>
       </table>
+      {row && !me ? (
+        <p className={meError ? ui.error : ui.muted}>
+          {meError ? "Não foi possível carregar seu perfil — tentando de novo…" : "Carregando seu perfil…"}
+        </p>
+      ) : null}
       {row && me ? (
         <div className={ui.card} style={{ marginTop: 16 }}>
           <AgentForm

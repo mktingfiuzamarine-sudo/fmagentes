@@ -20,9 +20,10 @@ const TABS: Array<{ id: Tab; label: string }> = [
 function Inbox() {
   const params = useSearchParams();
   const router = useRouter();
-  const me = useMe();
+  const { me, error: meError } = useMe();
   const tab = (TABS.some((t) => t.id === params.get("tab")) ? params.get("tab") : "handoff") as Tab;
   const selected = params.get("c");
+  const profileMessage = meError ? "Não foi possível carregar seu perfil — tentando de novo…" : "Carregando seu perfil…";
   const list = usePolling(() => apiFetch<InboxResponse>(`/conversations?view=${tab}`), `inbox-${tab}`);
 
   function navigate(next: { tab?: Tab; c?: string | null }) {
@@ -68,6 +69,8 @@ function Inbox() {
               onBack={() => navigate({ c: null })}
               onChanged={() => void list.refresh()}
             />
+          ) : selected ? (
+            <p className={meError ? ui.error : ui.muted}>{profileMessage}</p>
           ) : (
             <p className={ui.muted}>Selecione uma conversa.</p>
           )}

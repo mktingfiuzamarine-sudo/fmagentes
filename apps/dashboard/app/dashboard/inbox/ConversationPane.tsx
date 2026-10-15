@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../../lib/browserApi";
 import { ApiError } from "../../../lib/api";
 import { formatPhone, formatTime } from "../../../lib/format";
@@ -28,10 +28,23 @@ export function ConversationPane(props: { id: string; me: Me; onBack(): void; on
   const [failure, setFailure] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
 
+  const historyRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
   const conversation = detail.data;
+  const messageCount = conversation?.messages.length ?? 0;
+  const loaded = conversation !== null;
+
+  // Open at the newest message; afterwards follow new ones only if the reader is near the bottom.
+  useEffect(() => {
+    const el = historyRef.current;
+    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
+  }, [loaded, messageCount]);
+
   if (!conversation) {
     const notFound = detail.error instanceof ApiError && detail.error.status === 404;
-    return <p className={notFound ? ui.error : ui.muted}>{notFound ? "Conversa não encontrada." : "Carregando…"}</p>;
+    if (notFound) return <p className={ui.error}>Conversa não encontrada.</p>;
+    if (detail.error) return <p className={ui.error}>Não foi possível carregar a conversa — tentando de novo…</p>;
+    return <p className={ui.muted}>Carregando…</p>;
   }
 
   async function run(action: () => Promise<unknown>, errorText: string) {
@@ -122,7 +135,14 @@ export function ConversationPane(props: { id: string; me: Me; onBack(): void; on
         )}
       </div>
 
-      <div className={ui.history}>
+      <div
+        className={ui.history}
+        ref={historyRef}
+        onScroll={(event) => {
+          const el = event.currentTarget;
+          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        }}
+      >
         {conversation.messages.map((message) => (
           <div key={message.id} className={`${ui.bubble} ${bubbleClass(message)}`}>
             {message.content}

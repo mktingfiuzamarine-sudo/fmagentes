@@ -20,7 +20,7 @@ const LINKS = [
 export function DashboardShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const me = useMe();
+  const { me } = useMe();
   const { data } = usePolling(() => apiFetch<InboxResponse>("/conversations?view=handoff"), "shell-counts");
   const handoffs = data?.counts.handoff ?? 0;
 
