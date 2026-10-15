@@ -14,7 +14,7 @@ later sub-project, that's a signal to stop and reconsider, not to build it early
 | 2 | **Integração Evolution API** | Real webhook processing, sending messages, instance management. | ✅ **Complete** (merged `<pending>`, 2026-09-04) |
 | 3 | **Fila/Worker (BullMQ)** | Real business jobs: process incoming message, generate response, send response. | ✅ **Complete** (merged `<pending>`, 2026-09-21) |
 | 4 | **Núcleo do Agente/LLM** | AI logic, prompt design, conversation context management. | ✅ **Complete** (merged `<pending>`, 2026-10-14) |
-| 5 | **Dashboard completo** | Functional inbox, agent management, Evolution API instance management. | ▶ Next |
+| 5 | **Dashboard completo** | Functional inbox, agent management, Evolution API instance management. | ✅ **Complete** (merged `<pending>`, 2026-10-15) |
 
 ## Sub-project 1 — Fundação (done)
 
@@ -373,6 +373,88 @@ clients "Bruno Teste" and "Carla Mendes" (`(11) 90000-0002`) remain.
   already-linked conversations, tool `execute` ignores the abort signal, etc.)
   are listed in the plan's review ledger.
 
+## Sub-project 5 — Dashboard completo (done)
+
+Spec: `docs/superpowers/specs/2026-10-15-dashboard-design.md`. Plan:
+`docs/superpowers/plans/2026-10-15-dashboard-implementation.md`. Branch `feat/dashboard`.
+
+**Data.** Migration `0005_dashboard.sql` (applied): `conversations.assigned_to` /
+`assigned_at` (advisory assignment), `messages.sent_by` (author of human sends),
+`team_members(user_id, display_name)` and the `conversation_inbox` view
+(conversation + number name + latest message by `received_at`). Messaging's
+`sendMessage` takes `sentBy`; `resumeConversation` also clears the assignment.
+
+**API.** All behind the existing auth + allowlist: `GET /me` (name, available
+LLM providers), `GET /conversations?view=handoff|all|mine` (items + counts),
+`GET /conversations/:id` (latest 100 messages with authors, CRM customer view —
+a CPF link never returns a name), `POST /conversations/:id/assign|unassign`,
+`GET/POST /agents`, `PUT /agents/:id`. `POST /conversations/:id/messages` now
+records `sent_by`, caps text at 4096 and 404s a malformed id. Data access goes
+through a `DashboardStore` port. LLM keys and CRM vars are optional in the API.
+
+**Dashboard.** Same-origin `/api/*` rewrite to the API with the Supabase access
+token; 10 s polling while the tab is visible; shell with Inbox / Agentes /
+Números / Status and the handoff count. Inbox: Transferidas / Minhas / Todas,
+Assumir / Soltar, reply with author, "Devolver ao bot", inline confirmations,
+"CPF não verificado" badge, mobile two-screen layout. Agentes: one agent per
+number, create/edit, provider-key and inactive warnings. Números: create, QR
+pairing, typed-name removal.
+
+### End-to-end evidence (2026-10-15)
+
+Browser at `localhost:3000` (logged in as `teste@fmagentes.com`), real
+fmagentes DB, real LLM (`openai/gpt-4o-mini` — Anthropic account has no credit),
+Evolution stub on `127.0.0.1:4555`, API without CRM vars.
+
+1. Customer asked for a quote + human → handoff; within 10 s the inbox showed
+   it under "Transferidas (1)" with the summary and the nav badge.
+2. Assumir → "Responsável: teste@fmagentes.com", "Minhas (1)".
+3. Reply from the panel → stub got it; bubble shows the author;
+   `messages.sent_by` = the user's id.
+4. Customer replied → bot `skipped`; "aguardando resposta" within 10 s, history
+   scrolled to the newest message.
+5. Devolver ao bot (inline confirm) → queue emptied, conversation read-only; the
+   next customer question about hours got a bot answer. (A follow-up about the
+   custom order was handed off again — correct per the test prompt — and its new
+   summary included the deadline given during the human part.)
+6. Agent prompt edited in the panel ("Sempre termine com 'Bons ventos!'") → the
+   next bot answer ended with "Bons ventos!" (reverted afterwards).
+7. Números: created `e2e-teste` → QR shown (stub image), status "conectando";
+   removed with the typed name; `smoke-test-final` untouched.
+8. `crm_link_via` set to `cpf` → "CPF não verificado" badge and no name
+   (reverted). Without CRM vars a phone link shows "nome indisponível".
+9. 390 px wide (iframe): horizontal nav, list and conversation as separate
+   screens with "← Voltar".
+
+### Refinements to the spec (decided while planning/executing)
+
+1. `DashboardStore` port (Supabase implementation + fake for route tests).
+2. `conversation_inbox` view for a one-query list.
+3. CRM name lookup is a small `CustomerNamePort` in the API (the agent adapter
+   needs an `agentUserId` the API does not have).
+4. `AppConfig.providers?` / `AppDependencies.customerNames?` optional.
+5. QR fetched once (+ "Gerar novo QR"); status comes from list polling.
+6. Agent form keyed on the number only, so the save status/warning survives a
+   create.
+
+### Debt carried forward
+
+- Spec's "Out" list: canned replies, media, metrics, user management in the
+  panel, per-user RLS, Realtime, taking over non-handed-off conversations.
+- Provider availability is inferred from the API env, not the worker's.
+- `fromMe` messages still not persisted.
+- Found in e2e: the tab title loses its `(N)` prefix after a client-side
+  navigation when the count does not change; on narrow screens the conversation
+  opens at the oldest message (the page scrolls, not the history box); polling
+  pauses in hidden tabs (by design, but a background tab never updates its
+  title count).
+- `apps/api/tests/inbox.test.ts` emoji-truncation test cannot fail (its regex
+  holds a literal U+FFFD); the code fix itself is correct.
+- Smaller deferred items from the review ledger: shell polls the full handoff
+  list for the count; POST /agents count-then-insert race; usePolling has no
+  stale-response guard; shared failure state on the pane; circular import
+  app.ts ↔ routes.
+
 ## Local development notes
 
 - Node **>= 22**, pnpm, Turborepo.
@@ -382,3 +464,7 @@ clients "Bruno Teste" and "Carla Mendes" (`(11) 90000-0002`) remain.
   process tree killed, not just whatever holds the ports, or a stray worker
   keeps draining the BullMQ queue and the e2e queue test fails.
 - Each app needs its own `.env` (copy from the committed `.env.example`).
+- Dashboard: the `/api/*` proxy targets `API_URL` (falls back to
+  `NEXT_PUBLIC_API_URL`). A team member needs a Supabase Auth user, their
+  e-mail in `apps/api/.env` `API_ALLOWED_USERS`, and optionally a
+  `team_members` row for a display name.
