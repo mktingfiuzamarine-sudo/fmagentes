@@ -197,6 +197,16 @@ O núcleo de mensageria é cuidadoso (lock, marca d'água, idempotência), e a c
 Os riscos reais estão nas bordas: **C1** expõe tudo pela REST do Supabase; **I5** pode fazer o bot falar em grupos;
 **I8** deixa clientes sem resposta hoje mesmo (Anthropic sem crédito); **I6/I7** aparecem sob falhas transitórias.
 
+## Correções aplicadas (branch `fix/review-i1-i5-i7-i8`)
+- **I5** — `parseEvolutionEvent` só aceita `@s.whatsapp.net`; `@lid` é resolvido por `remoteJidAlt`/`senderPn` ou ignorado.
+- **I1** — `createSupabaseAuthPort` devolve `email: null` quando `email_confirmed_at` é nulo.
+- **I7** — todos os clientes Supabase do worker com timeout de 10 s (`apps/worker/src/deps.ts`); lock para de renovar
+  após 3 min (`DEFAULT_MAX_HOLD_MS`). Obs.: postgrest-js 2.111 refaz leituras sozinho (até 4×, backoff 1/2/4 s), então
+  uma leitura pendurada termina em ~47 s, não em 10 s.
+- **I8** — `handOffAfterFailure` (messaging) marca `awaiting_human` com resumo "Bot indisponível: …" e envia o
+  `handoffMessage`; o worker chama em erro de configuração e na última tentativa. O 400 de saldo da Anthropic agora é
+  erro de configuração.
+
 ## Ordem sugerida de correção
 1. **C1** — migration 0006 (revoke) + desligar signup no painel do Supabase. *Precisa de confirmação: muda o banco de produção.*
 2. **I5** (filtro de JID) e **I8** (fallback para humano) — pequenos e de alto impacto.
