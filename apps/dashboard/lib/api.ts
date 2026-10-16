@@ -11,6 +11,8 @@ export class ApiError extends Error {
 export interface ApiFetchDeps {
   getToken(): Promise<string | null>;
   onUnauthorized(): void;
+  /** 403: signed in, but the account is not on the API allowlist. */
+  onForbidden?(): void;
   fetchImpl?: typeof fetch;
 }
 
@@ -44,6 +46,10 @@ export function createApiFetch(deps: ApiFetchDeps) {
     if (response.status === 401) {
       deps.onUnauthorized();
       throw new ApiError(401, body);
+    }
+    if (response.status === 403) {
+      deps.onForbidden?.();
+      throw new ApiError(403, body);
     }
     if (!response.ok) throw new ApiError(response.status, body);
     return body as T;

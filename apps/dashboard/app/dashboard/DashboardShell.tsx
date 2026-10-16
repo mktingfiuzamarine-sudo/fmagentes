@@ -22,8 +22,9 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { me } = useMe();
-  const { data } = usePolling(() => apiFetch<InboxResponse>("/conversations?view=handoff"), "shell-counts", undefined, { hiddenIntervalMs: 60_000 });
-  const handoffs = data?.counts.handoff ?? 0;
+  // Counts only: the inbox page already polls the lists themselves.
+  const { data } = usePolling(() => apiFetch<InboxResponse["counts"]>("/conversations/counts"), "shell-counts", undefined, { hiddenIntervalMs: 60_000 });
+  const handoffs = data?.handoff ?? 0;
 
   useEffect(() => {
     // Next re-applies metadata.title on client navigation, so re-run on pathname and each poll result.

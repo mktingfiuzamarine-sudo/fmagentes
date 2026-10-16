@@ -50,3 +50,16 @@ describe("createApiFetch", () => {
     await expect(apiFetch("/instances/x", { method: "DELETE" })).resolves.toBeNull();
   });
 });
+
+describe("an account outside the allowlist (M15)", () => {
+  it("calls onForbidden on 403 instead of leaving the page retrying forever", async () => {
+    const onForbidden = vi.fn();
+    const onUnauthorized = vi.fn();
+    const fetchImpl = vi.fn().mockResolvedValue(response(403, { error: "forbidden" }));
+    const apiFetch = createApiFetch({ getToken: async () => "tok", onUnauthorized, onForbidden, fetchImpl });
+
+    await expect(apiFetch("/me")).rejects.toMatchObject({ status: 403 });
+    expect(onForbidden).toHaveBeenCalledOnce();
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+});

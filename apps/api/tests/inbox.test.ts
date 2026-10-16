@@ -212,3 +212,21 @@ describe("assign / unassign", () => {
     await missing.close();
   });
 });
+
+describe("GET /conversations/counts (M17)", () => {
+  it("returns only the counts, without listing the inbox", async () => {
+    const store = fakeDashboardStore({
+      listInbox: vi.fn(),
+      countInbox: vi.fn().mockResolvedValue({ handoff: 2, mine: 1 }),
+    });
+    const app = buildApp(deps(store));
+
+    const response = await get(app, "/conversations/counts");
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ handoff: 2, mine: 1 });
+    expect(store.countInbox).toHaveBeenCalledWith(TEST_USER.id);
+    expect(store.listInbox).not.toHaveBeenCalled();
+    await app.close();
+  });
+});

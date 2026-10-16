@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createGeneration } from "./generation";
 
 export const POLL_INTERVAL_MS = 10_000;
 
@@ -25,17 +26,23 @@ export function usePolling<T>(
   const [error, setError] = useState<unknown>(null);
   const loadRef = useRef(load);
   loadRef.current = load;
+  const generation = useRef(createGeneration()).current;
 
   const refresh = useCallback(async () => {
+    // A slow answer for the previous key must not overwrite the new key's data.
+    const started = generation.current();
     try {
-      setData(await loadRef.current());
+      const loaded = await loadRef.current();
+      if (!generation.isCurrent(started)) return;
+      setData(loaded);
       setError(null);
     } catch (caught) {
-      setError(caught);
+      if (generation.isCurrent(started)) setError(caught);
     }
-  }, []);
+  }, [generation]);
 
   useEffect(() => {
+    generation.advance();
     setData(null);
     let lastRun = Date.now();
     const run = () => {
@@ -56,7 +63,7 @@ export function usePolling<T>(
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [key, intervalMs, hiddenIntervalMs, refresh]);
+  }, [key, intervalMs, hiddenIntervalMs, refresh, generation]);
 
   return { data, error, refresh };
 }

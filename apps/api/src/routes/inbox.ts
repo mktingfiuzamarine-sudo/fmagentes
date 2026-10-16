@@ -19,6 +19,10 @@ export function registerInboxRoutes(app: FastifyInstance, deps: AppDependencies)
     return { items: rows.map((row) => toListItem(row, names)), counts };
   });
 
+  // For the dashboard shell's badge: counting is all it needs, so it does not
+  // re-fetch the list the inbox page is already polling.
+  app.get("/conversations/counts", async (request) => dashboardStore(deps).countInbox(request.user!.id));
+
   app.get("/conversations/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     if (!isUuid(id)) return reply.code(404).send({ error: "conversation not found" });
