@@ -24,7 +24,18 @@ const schema = z.object({
   // Comma-separated emails or Supabase user ids allowed to call the consumer
   // routes. Required and non-empty: an absent allowlist must not mean "anyone".
   API_ALLOWED_USERS: z.string().min(1),
+  // Only behind a reverse proxy: "true", a hop count, or the proxy addresses.
+  API_TRUST_PROXY: emptyAsAbsent(z.string().optional()),
 });
 
 export const loadEnv = createEnvLoader(schema);
+
+/** Maps API_TRUST_PROXY onto Fastify trustProxy; unset trusts no proxy. */
+export function parseTrustProxy(value: string | undefined): boolean | number | string {
+  const trimmed = value?.trim() ?? "";
+  if (trimmed === "" || trimmed === "false") return false;
+  if (trimmed === "true") return true;
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  return trimmed;
+}
 export type Env = ReturnType<typeof loadEnv>;

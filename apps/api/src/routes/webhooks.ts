@@ -4,7 +4,9 @@ import { parseEvolutionEvent, ingestInboundMessage, inboundJobId } from "@fmagen
 import { mapConnectionState, INSTANCE_STATUS } from "@fmagentes/shared";
 
 export function registerWebhookRoute(app: FastifyInstance, deps: AppDependencies): void {
-  app.post("/webhooks/evolution", async (request, reply) => {
+  // Unlimited: Evolution delivers every message from one address, and a burst
+  // must not be dropped. The apikey check below is cheap to fail.
+  app.post("/webhooks/evolution", { config: { rateLimit: false } }, async (request, reply) => {
     // `!secret ||` matters: without it a missing header would compare
     // `undefined !== undefined` and authenticate the request.
     if (!deps.config.webhookSecret || request.headers.apikey !== deps.config.webhookSecret) {

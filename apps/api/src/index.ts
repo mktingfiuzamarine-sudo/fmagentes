@@ -4,7 +4,7 @@ import { createInboundQueue } from "@fmagentes/messaging";
 import { buildApp } from "./app";
 import { createSupabaseCustomerNames } from "./dashboard/customerNames";
 import { createSupabaseAuthPort } from "./auth";
-import { loadEnv } from "./env";
+import { loadEnv, parseTrustProxy } from "./env";
 
 const env = loadEnv();
 
@@ -45,6 +45,7 @@ const app = buildApp({
     webhookSecret: env.WEBHOOK_SECRET,
     publicWebhookUrl: env.PUBLIC_WEBHOOK_URL,
     allowedUsers,
+    trustProxy: parseTrustProxy(env.API_TRUST_PROXY),
     providers: {
       anthropic: Boolean(env.ANTHROPIC_API_KEY?.trim()),
       openai: Boolean(env.OPENAI_API_KEY?.trim()),
