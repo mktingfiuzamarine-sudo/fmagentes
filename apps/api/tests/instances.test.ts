@@ -123,3 +123,65 @@ describe("instance routes", () => {
     await app.close();
   });
 });
+
+describe("instance routes report database failures (I3)", () => {
+  const DB_DOWN = { message: "db down" };
+  const ROW = { id: "inst-1", evolution_instance_id: "acme" };
+
+  /** A Supabase whose reads, deletes and updates fail as configured. */
+  function failing(fail: { read?: boolean; delete?: boolean; update?: boolean }, evolution: Record<string, unknown> = {}) {
+    const d = deps(evolution);
+    const readResult = () => (fail.read ? { data: null, error: DB_DOWN } : { data: ROW, error: null });
+    d.supabase = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({ maybeSingle: async () => readResult() }),
+          order: () => ({ then: (r: (v: unknown) => unknown) => r(fail.read ? readResult() : { data: [ROW], error: null }) }),
+        }),
+        update: () => ({ eq: async () => ({ error: fail.update ? DB_DOWN : null }) }),
+        delete: () => ({ eq: async () => ({ error: fail.delete ? DB_DOWN : null }) }),
+      }),
+    } as never;
+    return d;
+  }
+
+  async function call(d: AppDependencies, method: "GET" | "DELETE", url: string) {
+    const app = buildApp(d);
+    const response = await app.inject({ method, url, headers: AUTH_HEADERS });
+    await app.close();
+    return response;
+  }
+
+  it("GET /instances answers 500 instead of an empty list", async () => {
+    expect((await call(failing({ read: true }), "GET", "/instances")).statusCode).toBe(500);
+  });
+
+  it("GET /instances/:id answers 500 instead of 404", async () => {
+    expect((await call(failing({ read: true }), "GET", "/instances/inst-1")).statusCode).toBe(500);
+  });
+
+  it("GET /instances/:id/qr answers 500 without calling Evolution", async () => {
+    const connectInstance = vi.fn();
+    const response = await call(failing({ read: true }, { connectInstance }), "GET", "/instances/inst-1/qr");
+    expect(response.statusCode).toBe(500);
+    expect(connectInstance).not.toHaveBeenCalled();
+  });
+
+  it("GET /instances/:id/qr still returns the QR when only the status write fails", async () => {
+    const response = await call(failing({ update: true }), "GET", "/instances/inst-1/qr");
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ qrcode: "data:img" });
+  });
+
+  it("DELETE /instances/:id answers 500 without calling Evolution when the lookup fails", async () => {
+    const deleteInstance = vi.fn();
+    const response = await call(failing({ read: true }, { deleteInstance }), "DELETE", "/instances/inst-1");
+    expect(response.statusCode).toBe(500);
+    expect(deleteInstance).not.toHaveBeenCalled();
+  });
+
+  it("DELETE /instances/:id answers 500 when the row survives, so the caller retries", async () => {
+    const response = await call(failing({ delete: true }), "DELETE", "/instances/inst-1");
+    expect(response.statusCode).toBe(500);
+  });
+});
