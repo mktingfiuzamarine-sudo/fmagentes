@@ -218,6 +218,15 @@ Os riscos reais estão nas bordas: **C1** expõe tudo pela REST do Supabase; **I
   verificação por 5 s e manteve o formato, porque o dashboard o exibe. `API_TRUST_PROXY` (opcional) deve ser definido
   quando o Traefik ficar na frente da API; sem isso, todos os clientes dividem o limite do proxy. O cache de `getUser`
   ficou de fora: o limite já barra a enxurrada de tokens.
+- **Menores (M1–M4, M7–M17)** — segredo do webhook em tempo constante; 5xx com corpo genérico; nome de número
+  validado e recusa da Evolution como 409 (o dashboard explica); falha ao gravar status no `connection.update` vira 500;
+  timeout de 10 s em todos os clientes Supabase da API; `last_message_at` checado na entrada e regravado em reenvio
+  (no `sendMessage` continua best effort, porque a mensagem já foi entregue); mensagens acima de 4.000 caracteres
+  chegam cortadas ao modelo; passos esgotados em ferramentas viram handoff; comparação de handoff em µs; `attachPhone`
+  com compare-and-swap; `usePolling` descarta respostas de chave antiga; middleware com `getAll/setAll`; 403 desloga e
+  explica; `getHealth` com timeout de 5 s; o shell usa o novo `GET /conversations/counts`.
+- **Pendentes de confirmação (mudam banco):** M5 e M6 (índices/unique no banco de produção — o M6 também exige mudar o
+  `onConflict` do ingest junto com a migration) e M18 (índice no banco do CRM). Ficam com a C1.
 
 ## Ordem sugerida de correção
 1. **C1** — migration 0006 (revoke) + desligar signup no painel do Supabase. *Precisa de confirmação: muda o banco de produção.*
