@@ -225,8 +225,20 @@ Os riscos reais estão nas bordas: **C1** expõe tudo pela REST do Supabase; **I
   chegam cortadas ao modelo; passos esgotados em ferramentas viram handoff; comparação de handoff em µs; `attachPhone`
   com compare-and-swap; `usePolling` descarta respostas de chave antiga; middleware com `getAll/setAll`; 403 desloga e
   explica; `getHealth` com timeout de 5 s; o shell usa o novo `GET /conversations/counts`.
-- **Pendentes de confirmação (mudam banco):** M5 e M6 (índices/unique no banco de produção — o M6 também exige mudar o
-  `onConflict` do ingest junto com a migration) e M18 (índice no banco do CRM). Ficam com a C1.
+- **C1 (aplicada em 2026-10-16, migration 0006):** policies `authenticated_full_access` removidas e todos os grants de
+  `anon`/`authenticated` revogados (também os padrões para objetos futuros); RLS continua ligado. Verificado: com a
+  anon key toda tabela e a view respondem 42501; com a service key, 200. **Falta o usuário desligar o cadastro
+  público** (Authentication → “Allow new users to sign up”).
+- **M6 + M5 (aplicadas, migration 0007):** unique `(conversation_id, evolution_message_id)` no lugar do global; o
+  ingest faz upsert e busca duplicata por conversa (teste real em transação com rollback: mesmo id em duas conversas
+  entra, repetição na mesma conversa é ignorada). Índice `messages_conversation_id_idx` removido. O índice parcial de
+  `handoff_at` ficou de fora: nenhuma consulta filtra por ele hoje. A 0007 entrou antes da 0006 no histórico remoto;
+  são independentes.
+- **M18 (aplicada no CRM, `aula` 010):** `pg_trgm` + índice GIN trigram em `phone_digits` no lugar do btree; o
+  `EXPLAIN` confirma o uso do índice nas duas buscas por sufixo do agente.
+- **I9 (verificado, sem mudança):** o CRM tem 1 usuário, que é o `CRM_AGENT_USER_ID` e dono dos 3 clientes. Hoje o
+  agente não vê nem cria nada fora dessa conta. Vira problema só se surgir uma segunda conta no CRM; a decisão
+  (equipe com acesso compartilhado × contas independentes) pode esperar até lá.
 
 ## Ordem sugerida de correção
 1. **C1** — migration 0006 (revoke) + desligar signup no painel do Supabase. *Precisa de confirmação: muda o banco de produção.*
