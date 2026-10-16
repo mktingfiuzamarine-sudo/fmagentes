@@ -57,7 +57,19 @@ export async function ingestInboundMessage(
   assertNoError(insertMsg.error);
 
   const rows = (insertMsg.data as Array<{ id: string }> | null) ?? [];
-  if (rows.length === 0) return null;
+  if (rows.length === 0) {
+    // Evolution redelivers when an earlier webhook failed, possibly after the
+    // insert but before the enqueue. Hand back the stored row so the caller can
+    // enqueue it again; the job id and the worker's guard make that harmless.
+    const existing = await deps.supabase
+      .from("messages")
+      .select("id, conversation_id")
+      .eq("evolution_message_id", event.messageId)
+      .maybeSingle();
+    assertNoError(existing.error);
+    const row = existing.data as { id: string; conversation_id: string } | null;
+    return row ? { messageId: row.id, conversationId: row.conversation_id, instanceId } : null;
+  }
 
   await deps.supabase
     .from("conversations")

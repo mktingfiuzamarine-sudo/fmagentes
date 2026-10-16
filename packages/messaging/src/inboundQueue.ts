@@ -22,6 +22,11 @@ export const INBOUND_JOB_OPTIONS: DefaultJobOptions = {
   removeOnFail: { count: 5000 },
 };
 
+/** BullMQ rejects custom ids containing ":", hence the dash. */
+export function inboundJobId(messageId: string): string {
+  return `in-${messageId}`;
+}
+
 export function createInboundQueue(connection: Redis): Queue<InboundJobData> {
   return new Queue<InboundJobData>(INBOUND_QUEUE_NAME, {
     connection,

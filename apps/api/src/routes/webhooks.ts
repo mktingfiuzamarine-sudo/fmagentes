@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { AppDependencies } from "../app";
-import { parseEvolutionEvent, ingestInboundMessage } from "@fmagentes/messaging";
+import { parseEvolutionEvent, ingestInboundMessage, inboundJobId } from "@fmagentes/messaging";
 import { mapConnectionState, INSTANCE_STATUS } from "@fmagentes/shared";
 
 export function registerWebhookRoute(app: FastifyInstance, deps: AppDependencies): void {
@@ -23,7 +23,9 @@ export function registerWebhookRoute(app: FastifyInstance, deps: AppDependencies
 
         const ingested = await ingestInboundMessage(deps, event);
         if (ingested) {
-          await deps.inboundQueue.add("inbound-messages", ingested);
+          // One job per message: a redelivered webhook re-adds the same id,
+          // which BullMQ ignores while the job is still kept.
+          await deps.inboundQueue.add("inbound-messages", ingested, { jobId: inboundJobId(ingested.messageId) });
         }
         return reply.code(200).send({ received: true });
       }

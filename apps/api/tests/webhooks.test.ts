@@ -87,11 +87,12 @@ describe("POST /webhooks/evolution", () => {
     expect((d.inboundQueue as never as { add: ReturnType<typeof vi.fn> }).add).toHaveBeenCalledWith(
       "inbound-messages",
       { messageId: "m1", conversationId: "c1", instanceId: "i1" },
+      { jobId: "in-m1" },
     );
     await app.close();
   });
 
-  it("200 and does NOT enqueue when ingest returns null (duplicate / unknown instance)", async () => {
+  it("200 and does NOT enqueue when ingest returns null (no text / unknown instance)", async () => {
     ingestMock.mockResolvedValue(null);
     const d = deps();
     const app = buildApp(d);

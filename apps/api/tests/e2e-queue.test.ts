@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Redis } from "ioredis";
-import { Worker } from "bullmq";
-import { createInboundQueue, INBOUND_QUEUE_NAME, type InboundJobData } from "@fmagentes/messaging";
+import { randomUUID } from "node:crypto";
+import { Queue, Worker } from "bullmq";
+import { createInboundQueue, inboundJobId, INBOUND_QUEUE_NAME, type InboundJobData } from "@fmagentes/messaging";
 
 describe("end-to-end: api enqueues, worker processes", () => {
   let producerRedis: Redis;
@@ -58,4 +59,19 @@ describe("end-to-end: api enqueues, worker processes", () => {
     expect(processed).toEqual(["msg-e2e"]);
     await queue.close();
   }, 10000);
+
+  it("keeps one job per message when a webhook is redelivered (I2)", async () => {
+    // A queue of its own, with no worker, so the job stays waiting.
+    const queue = new Queue<InboundJobData>(`inbound-dedupe-test-${randomUUID()}`, { connection: producerRedis });
+    const data = { messageId: randomUUID(), conversationId: "conv-e2e", instanceId: "inst-e2e" };
+    try {
+      await queue.add(INBOUND_QUEUE_NAME, data, { jobId: inboundJobId(data.messageId) });
+      await queue.add(INBOUND_QUEUE_NAME, data, { jobId: inboundJobId(data.messageId) });
+
+      expect(await queue.getWaitingCount()).toBe(1);
+    } finally {
+      await queue.obliterate({ force: true });
+      await queue.close();
+    }
+  });
 });

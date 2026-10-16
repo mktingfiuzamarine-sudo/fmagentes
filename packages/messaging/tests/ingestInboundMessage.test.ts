@@ -44,12 +44,33 @@ describe("ingestInboundMessage", () => {
     expect(result).toEqual({ messageId: "msg-1", conversationId: "conv-1", instanceId: "inst-1" });
   });
 
-  it("returns null when the message already exists (idempotent upsert no-op)", async () => {
+  it("returns the stored ids when the message already exists, so a lost enqueue can be redone (I2)", async () => {
+    const lookups: unknown[][] = [];
     const supabase = createSupabaseMock({
       instances: () => ({ data: { id: "inst-1" }, error: null }),
       conversations: (calls) =>
         calls.some((c) => c.op === "upsert") ? { data: null, error: null } : { data: { id: "conv-1" }, error: null },
-      messages: () => ({ data: [], error: null }),
+      messages: (calls) => {
+        if (calls.some((c) => c.op === "upsert")) return { data: [], error: null };
+        lookups.push(calls.filter((c) => c.op === "eq").map((c) => c.args));
+        return { data: { id: "msg-old", conversation_id: "conv-1" }, error: null };
+      },
+    });
+
+    expect(await ingestInboundMessage(deps(supabase), event)).toEqual({
+      messageId: "msg-old",
+      conversationId: "conv-1",
+      instanceId: "inst-1",
+    });
+    expect(lookups).toEqual([[["evolution_message_id", "MSG1"]]]);
+  });
+
+  it("returns null when the duplicate cannot be found any more", async () => {
+    const supabase = createSupabaseMock({
+      instances: () => ({ data: { id: "inst-1" }, error: null }),
+      conversations: (calls) =>
+        calls.some((c) => c.op === "upsert") ? { data: null, error: null } : { data: { id: "conv-1" }, error: null },
+      messages: (calls) => (calls.some((c) => c.op === "upsert") ? { data: [], error: null } : { data: null, error: null }),
     });
 
     expect(await ingestInboundMessage(deps(supabase), event)).toBeNull();
