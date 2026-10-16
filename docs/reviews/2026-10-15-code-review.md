@@ -213,6 +213,11 @@ Os riscos reais estão nas bordas: **C1** expõe tudo pela REST do Supabase; **I
   `jobId: in-<messageId>` (`inboundJobId`). O `in:` sugerido acima não serve: o BullMQ 5 rejeita `:` em ids customizados.
 - **I3** — `/instances` (lista, detalhe, `/qr`, `DELETE`) responde 500 em erro do banco; falha só ao gravar
   `connecting` no `/qr` vira log, porque o QR continua válido. Repetir o `DELETE` é seguro (Evolution trata 404 como apagado).
+- **I4** — `@fastify/rate-limit` antes da autenticação: 600/min por endereço (o proxy do dashboard junta todos os
+  atendentes num endereço só), 30/min no `/health`, sem limite no webhook da Evolution. O `/health` reaproveita uma
+  verificação por 5 s e manteve o formato, porque o dashboard o exibe. `API_TRUST_PROXY` (opcional) deve ser definido
+  quando o Traefik ficar na frente da API; sem isso, todos os clientes dividem o limite do proxy. O cache de `getUser`
+  ficou de fora: o limite já barra a enxurrada de tokens.
 
 ## Ordem sugerida de correção
 1. **C1** — migration 0006 (revoke) + desligar signup no painel do Supabase. *Precisa de confirmação: muda o banco de produção.*
