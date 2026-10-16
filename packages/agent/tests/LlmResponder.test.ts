@@ -170,6 +170,35 @@ describe("LlmResponder", () => {
     expect((error as ResponderConfigurationError).agentId).toBe("agent-1");
   });
 
+  it("treats Anthropic's out-of-credit 400 as misconfiguration: retrying cannot fix billing", async () => {
+    const model = new MockLanguageModelV1({
+      doGenerate: async () => {
+        throw new APICallError({
+          message: "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.",
+          url: "https://api.anthropic.com/v1/messages",
+          requestBodyValues: {},
+          statusCode: 400,
+          isRetryable: false,
+        });
+      },
+    });
+    const { responder } = responderWith(model);
+
+    await expect(responder.generate(INPUT)).rejects.toBeInstanceOf(ResponderConfigurationError);
+  });
+
+  it("keeps any other 400 an ordinary failure", async () => {
+    const model = new MockLanguageModelV1({
+      doGenerate: async () => {
+        throw new APICallError({ message: "messages: text content blocks must be non-empty", url: "u", requestBodyValues: {}, statusCode: 400, isRetryable: false });
+      },
+    });
+    const { responder } = responderWith(model);
+
+    const error = await responder.generate(INPUT).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(APICallError);
+  });
+
   it("rejects an unknown provider before calling any model", async () => {
     const { model, calls } = scripted(text("never"));
     const { responder, createModel } = responderWith(model);

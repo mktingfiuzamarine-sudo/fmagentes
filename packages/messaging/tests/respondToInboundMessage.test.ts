@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { respondToInboundMessage } from "../src/respondToInboundMessage";
+import { handOffAfterFailure, respondToInboundMessage } from "../src/respondToInboundMessage";
 import { ConversationBusyError, LockLostError } from "../src/conversationLock";
 import type { ResponderResult } from "../src/responder";
 import { createSupabaseMock } from "./support/supabaseMock";
@@ -409,5 +409,44 @@ describe("respondToInboundMessage", () => {
       expect(store.markAwaitingHuman).not.toHaveBeenCalled();
       expect(evolutionApi.sendText).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("handOffAfterFailure", () => {
+  it("hands the conversation to a human and tells the customer, so a dead bot is never silent", async () => {
+    const { deps, store, responder, evolutionApi, inserts, release } = build();
+
+    await expect(handOffAfterFailure(deps, JOB, "sem crédito no provedor")).resolves.toEqual({
+      status: "handoff",
+      messageId: "msg-out",
+    });
+    expect(store.markAwaitingHuman).toHaveBeenCalledWith("conv-1", {
+      summary: "Bot indisponível: sem crédito no provedor",
+      handoffAt: INBOUND.receivedAt,
+    });
+    expect(evolutionApi.sendText).toHaveBeenCalledWith("acme", "5511999998888", AGENT.handoffMessage);
+    expect(inserts).toEqual([expect.objectContaining({ answers_through: INBOUND.receivedAt })]);
+    expect(responder.generate).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["the message was answered meanwhile", { answered: true }, "already-answered"],
+    ["the conversation is already with a human", { inbound: { conversationStatus: "awaiting_human" as const } }, "awaiting-human"],
+    ["the bot was switched off", { agent: null }, "no-active-agent"],
+    ["the message is gone", { inbound: null }, "message-not-found"],
+  ])("does nothing when %s", async (_label, store, reason) => {
+    const { deps, evolutionApi, store: fake } = build({ store });
+
+    await expect(handOffAfterFailure(deps, JOB, "x")).resolves.toEqual({ status: "skipped", reason });
+    expect(fake.markAwaitingHuman).not.toHaveBeenCalled();
+    expect(evolutionApi.sendText).not.toHaveBeenCalled();
+  });
+
+  it("leaves the conversation to whichever job holds its lock", async () => {
+    const { deps, evolutionApi } = build({ lockBusy: true });
+
+    await expect(handOffAfterFailure(deps, JOB, "x")).resolves.toEqual({ status: "skipped", reason: "busy" });
+    expect(evolutionApi.sendText).not.toHaveBeenCalled();
   });
 });

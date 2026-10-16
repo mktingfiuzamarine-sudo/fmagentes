@@ -5,10 +5,12 @@ import { createInboundProcessor } from "../src/inboundProcessor";
 
 const DATA: InboundJobData = { messageId: "m1", conversationId: "c1", instanceId: "i1" };
 
-function job(): Job<InboundJobData> & { moveToDelayed: ReturnType<typeof vi.fn> } {
+function job({ attemptsMade = 0, attempts = 3 } = {}): Job<InboundJobData> & { moveToDelayed: ReturnType<typeof vi.fn> } {
   return {
     id: "j1",
     data: DATA,
+    attemptsMade,
+    opts: { attempts },
     moveToDelayed: vi.fn(async () => {}),
   } as never;
 }
@@ -57,6 +59,63 @@ describe("createInboundProcessor", () => {
 
     await expect(process(job(), "tok")).rejects.toBeInstanceOf(UnrecoverableError);
     expect(logged).toHaveBeenCalledWith(expect.stringContaining("agent-9"));
+    logged.mockRestore();
+  });
+});
+
+describe("hand-off when a job fails for good", () => {
+  const handOff = () => vi.fn(async () => ({ status: "handoff" as const, messageId: "notice" }));
+  const quiet = () => vi.spyOn(console, "error").mockImplementation(() => {});
+
+  it("hands a misconfigured agent's conversation to a human, then fails permanently", async () => {
+    const logged = quiet();
+    const fallback = handOff();
+    const respond = vi.fn(async () => {
+      throw new ResponderConfigurationError("agent-9", "LLM rejected agent agent-9 with HTTP 400: credit balance is too low");
+    });
+    const process = createInboundProcessor({ marker: "deps" } as never, { respond: respond as never, handOff: fallback });
+
+    await expect(process(job(), "tok")).rejects.toBeInstanceOf(UnrecoverableError);
+    expect(fallback).toHaveBeenCalledWith({ marker: "deps" }, DATA, expect.stringContaining("configura"));
+    logged.mockRestore();
+  });
+
+  it("hands off on the last attempt of an ordinary failure", async () => {
+    const logged = quiet();
+    const fallback = handOff();
+    const respond = vi.fn(async () => {
+      throw new Error("anthropic overloaded");
+    });
+    const process = createInboundProcessor({} as never, { respond: respond as never, handOff: fallback });
+
+    await expect(process(job({ attemptsMade: 2, attempts: 3 }), "tok")).rejects.toThrow("anthropic overloaded");
+    expect(fallback).toHaveBeenCalledOnce();
+    logged.mockRestore();
+  });
+
+  it("does not hand off while BullMQ still has attempts left", async () => {
+    const fallback = handOff();
+    const respond = vi.fn(async () => {
+      throw new Error("anthropic overloaded");
+    });
+    const process = createInboundProcessor({} as never, { respond: respond as never, handOff: fallback });
+
+    await expect(process(job({ attemptsMade: 1, attempts: 3 }), "tok")).rejects.toThrow("anthropic overloaded");
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it("keeps the original error when the hand-off itself fails", async () => {
+    const logged = quiet();
+    const fallback = vi.fn(async () => {
+      throw new Error("evolution down");
+    });
+    const respond = vi.fn(async () => {
+      throw new Error("anthropic overloaded");
+    });
+    const process = createInboundProcessor({} as never, { respond: respond as never, handOff: fallback as never });
+
+    await expect(process(job({ attemptsMade: 2, attempts: 3 }), "tok")).rejects.toThrow("anthropic overloaded");
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining("hand-off"), expect.any(Error));
     logged.mockRestore();
   });
 });

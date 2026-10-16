@@ -27,6 +27,7 @@ export type RespondResult =
     };
 
 const MESSAGE_NOT_FOUND: RespondResult = { status: "skipped", reason: "message-not-found" };
+const MESSAGE_NOT_FOUND_FOR_HANDOFF: FailureHandoffResult = { status: "skipped", reason: "message-not-found" };
 
 export async function respondToInboundMessage(deps: RespondDeps, job: InboundJobData): Promise<RespondResult> {
   const lock = await deps.conversationLock.acquire(job.conversationId);
@@ -93,6 +94,52 @@ export async function respondToInboundMessage(deps: RespondDeps, job: InboundJob
         return messageId ? { status: "handoff", messageId } : MESSAGE_NOT_FOUND;
       }
     }
+  } finally {
+    await lock.release();
+  }
+}
+
+export type FailureHandoffResult =
+  | { status: "handoff"; messageId: string }
+  | { status: "skipped"; reason: "busy" | "message-not-found" | "awaiting-human" | "no-active-agent" | "already-answered" };
+
+/**
+ * Called once a job has failed for good (misconfigured agent, provider out of
+ * credit or down through every retry): hands the conversation to a human and
+ * sends the agent's handoff message, so the customer is never left in silence
+ * and the conversation shows up among the handoffs. Does nothing when another
+ * job holds the conversation (it will answer or fail on its own), the message
+ * is already answered, a human already has it, or the bot is switched off.
+ */
+export async function handOffAfterFailure(
+  deps: RespondDeps,
+  job: InboundJobData,
+  reason: string,
+): Promise<FailureHandoffResult> {
+  const lock = await deps.conversationLock.acquire(job.conversationId);
+  if (!lock) return { status: "skipped", reason: "busy" };
+
+  const store = deps.store ?? createSupabaseRespondStore(deps.supabase);
+
+  try {
+    const inbound = await store.loadInbound(job.messageId);
+    if (!inbound) return MESSAGE_NOT_FOUND_FOR_HANDOFF;
+    if (inbound.conversationStatus === "awaiting_human") return { status: "skipped", reason: "awaiting-human" };
+
+    const agent = await store.resolveAgent(inbound);
+    if (!agent) return { status: "skipped", reason: "no-active-agent" };
+
+    if (await store.isAnswered(inbound.conversationId, inbound.receivedAt)) {
+      return { status: "skipped", reason: "already-answered" };
+    }
+
+    if (lock.isLost()) throw new LockLostError(inbound.conversationId);
+    await store.markAwaitingHuman(inbound.conversationId, {
+      summary: `Bot indisponível: ${reason}`,
+      handoffAt: inbound.receivedAt,
+    });
+    const messageId = await sendGuarded(deps, lock, inbound.conversationId, agent.handoffMessage, inbound.receivedAt);
+    return messageId ? { status: "handoff", messageId } : MESSAGE_NOT_FOUND_FOR_HANDOFF;
   } finally {
     await lock.release();
   }

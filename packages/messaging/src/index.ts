@@ -39,6 +39,8 @@ export { loadConversationHistory, DEFAULT_HISTORY_LIMIT } from "./conversationHi
 export { resolveAgentForConversation } from "./resolveAgent";
 export {
   respondToInboundMessage,
+  handOffAfterFailure,
+  type FailureHandoffResult,
   type RespondDeps,
   type RespondResult,
 } from "./respondToInboundMessage";

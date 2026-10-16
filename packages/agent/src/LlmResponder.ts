@@ -92,9 +92,17 @@ function withLink(linked: LinkedCustomer | undefined): { linkedCustomer?: Linked
   return linked ? { linkedCustomer: linked } : {};
 }
 
+/** Anthropic answers an exhausted balance with a plain 400; only its message tells it apart. */
+const OUT_OF_CREDIT = /credit balance is too low/i;
+
+function isConfigurationError(error: APICallError): boolean {
+  if (error.statusCode === undefined) return false;
+  return CONFIGURATION_STATUSES.has(error.statusCode) || (error.statusCode === 400 && OUT_OF_CREDIT.test(error.message));
+}
+
 /** Configuration errors become ResponderConfigurationError; everything else is rethrown as is. */
 function classify(error: unknown, agent: AgentConfig): unknown {
-  if (APICallError.isInstance(error) && error.statusCode !== undefined && CONFIGURATION_STATUSES.has(error.statusCode)) {
+  if (APICallError.isInstance(error) && isConfigurationError(error)) {
     return new ResponderConfigurationError(
       agent.id,
       `LLM rejected agent ${agent.id} (${agent.provider}/${agent.model}) with HTTP ${error.statusCode}: ${error.message}`,
