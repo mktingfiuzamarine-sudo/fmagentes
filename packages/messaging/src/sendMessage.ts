@@ -42,12 +42,9 @@ export async function sendMessage(
     | null;
   if (!conv || !conv.instances) throw new ConversationNotFoundError(input.conversationId);
 
-  const sent = await deps.evolutionApi.sendText(
-    conv.instances.evolution_instance_id,
-    conv.contact_phone,
-    input.text,
-  );
-
+  // Record before sending: if the process dies or the database fails after
+  // Evolution delivered, a retry must find the reply (answers_through) instead
+  // of generating and sending a second one. At most once beats twice.
   const insert = await deps.supabase
     .from("messages")
     .insert({
@@ -55,7 +52,6 @@ export async function sendMessage(
       direction: "out",
       role: "assistant",
       content: input.text,
-      evolution_message_id: sent.messageId,
       ...(input.answersThrough !== undefined && { answers_through: input.answersThrough }),
       ...(input.sentBy !== undefined && { sent_by: input.sentBy }),
     })
@@ -64,6 +60,19 @@ export async function sendMessage(
   assertNoError(insert.error);
 
   const row = insert.data as { id: string; conversation_id: string; direction: "out"; content: string; created_at: string };
+
+  let sent: Awaited<ReturnType<MessagingDeps["evolutionApi"]["sendText"]>>;
+  try {
+    sent = await deps.evolutionApi.sendText(conv.instances.evolution_instance_id, conv.contact_phone, input.text);
+  } catch (error) {
+    // Not delivered: drop the record so a retry answers again.
+    await deps.supabase.from("messages").delete().eq("id", row.id);
+    throw error;
+  }
+
+  // Best effort: the message is already delivered and recorded; failing here
+  // would make a human resend it.
+  await deps.supabase.from("messages").update({ evolution_message_id: sent.messageId }).eq("id", row.id);
 
   await deps.supabase
     .from("conversations")
