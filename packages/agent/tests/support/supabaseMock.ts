@@ -9,7 +9,7 @@ export function createSupabaseMock(handlers: Record<string, Handler>) {
     const calls: TableCall = [];
     const result = () => handlers[table]?.(calls) ?? { data: null, error: null };
     const chain: Record<string, unknown> = {};
-    for (const op of ["select", "insert", "update", "eq", "or", "limit"]) {
+    for (const op of ["select", "insert", "update", "eq", "is", "or", "limit"]) {
       chain[op] = vi.fn((...args: unknown[]) => {
         calls.push({ op, args });
         return chain;

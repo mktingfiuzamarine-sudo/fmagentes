@@ -56,6 +56,14 @@ export async function ingestInboundMessage(
     .select("id");
   assertNoError(insertMsg.error);
 
+  // The inbox sorts by last_message_at. Written on redeliveries too, so a
+  // failure here (thrown: the webhook answers 500) is repaired by the retry.
+  const bump = await deps.supabase
+    .from("conversations")
+    .update({ last_message_at: new Date().toISOString() })
+    .eq("id", conversationId);
+  assertNoError(bump.error);
+
   const rows = (insertMsg.data as Array<{ id: string }> | null) ?? [];
   if (rows.length === 0) {
     // Evolution redelivers when an earlier webhook failed, possibly after the
@@ -70,11 +78,6 @@ export async function ingestInboundMessage(
     const row = existing.data as { id: string; conversation_id: string } | null;
     return row ? { messageId: row.id, conversationId: row.conversation_id, instanceId } : null;
   }
-
-  await deps.supabase
-    .from("conversations")
-    .update({ last_message_at: new Date().toISOString() })
-    .eq("id", conversationId);
 
   return { messageId: rows[0].id, conversationId, instanceId };
 }

@@ -83,3 +83,36 @@ describe("ingestInboundMessage", () => {
     await expect(ingestInboundMessage(deps(supabase), event)).rejects.toThrow("db down");
   });
 });
+
+describe("ingestInboundMessage keeps last_message_at in step (M8)", () => {
+  function supabaseWith(messages: (calls: { op: string; args: unknown[] }[]) => { data: unknown; error: unknown }, updateError: unknown = null) {
+    const updates: unknown[] = [];
+    const supabase = createSupabaseMock({
+      instances: () => ({ data: { id: "inst-1" }, error: null }),
+      conversations: (calls) => {
+        if (calls.some((c) => c.op === "update")) {
+          updates.push(calls[0].args[0]);
+          return { data: null, error: updateError };
+        }
+        return calls.some((c) => c.op === "upsert") ? { data: null, error: null } : { data: { id: "conv-1" }, error: null };
+      },
+      messages,
+    });
+    return { supabase, updates };
+  }
+
+  it("fails when last_message_at cannot be written, so the webhook is redelivered", async () => {
+    const { supabase } = supabaseWith(() => ({ data: [{ id: "msg-1" }], error: null }), { message: "db down" });
+    await expect(ingestInboundMessage(deps(supabase), event)).rejects.toThrow("db down");
+  });
+
+  it("writes last_message_at on a redelivery too, repairing a write lost the first time", async () => {
+    const { supabase, updates } = supabaseWith((calls) =>
+      calls.some((c) => c.op === "upsert") ? { data: [], error: null } : { data: { id: "msg-old", conversation_id: "conv-1" }, error: null },
+    );
+
+    await ingestInboundMessage(deps(supabase), event);
+
+    expect(updates).toEqual([{ last_message_at: expect.any(String) }]);
+  });
+});

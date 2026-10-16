@@ -10,6 +10,17 @@ export const PLATFORM_INSTRUCTIONS = [
   "- Depois de chamar transferir_para_humano, não escreva mais nada: a mensagem de transferência é enviada automaticamente.",
 ].join("\n");
 
+/**
+ * WhatsApp allows ~65k characters per message; every one is paid for in
+ * tokens on each reply. Longer messages reach the model cut, with a marker.
+ */
+export const MAX_PROMPT_MESSAGE_CHARS = 4000;
+const CUT_MARKER = "\n[mensagem cortada: longa demais]";
+
+function capped(content: string): string {
+  return content.length > MAX_PROMPT_MESSAGE_CHARS ? content.slice(0, MAX_PROMPT_MESSAGE_CHARS) + CUT_MARKER : content;
+}
+
 export function customerContextBlock(customer: CustomerContext): string {
   if (customer.status === "unregistered") {
     return "Cliente SEM cadastro. Antes de prosseguir com o atendimento, peça nome completo, CPF e e-mail e chame cadastrar_cliente.";
@@ -53,8 +64,8 @@ export function buildPrompt(input: {
     ...history.map(
       (message): CoreMessage =>
         message.role === "user"
-          ? { role: "user", content: message.content }
-          : { role: "assistant", content: message.content },
+          ? { role: "user", content: capped(message.content) }
+          : { role: "assistant", content: capped(message.content) },
     ),
   ];
 }

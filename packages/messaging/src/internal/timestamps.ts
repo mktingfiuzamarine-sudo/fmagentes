@@ -10,6 +10,11 @@ function epochMicros(timestamp: string): number {
   return ms * 1000 + Number(fraction.slice(3, 6).padEnd(3, "0"));
 }
 
+/** a <= b, to the microsecond. */
+export function notAfter(a: string, b: string): boolean {
+  return epochMicros(a) <= epochMicros(b);
+}
+
 /** The later of two database timestamps, returned as given (no rounding). */
 export function laterTimestamp(a: string, b: string | null): string;
 export function laterTimestamp(a: string | null, b: string): string;

@@ -238,6 +238,22 @@ describe("respondToInboundMessage", () => {
       expect(inserts).toEqual([expect.objectContaining({ answers_through: "2026-10-14T12:00:03.000Z" })]);
     });
 
+    it("compares with the handoff time to the microsecond (M11)", async () => {
+      // Same millisecond, 100 µs later: received after the handoff, so the human owns it.
+      const { deps, evolutionApi } = build({
+        store: {
+          inbound: {
+            conversationStatus: "awaiting_human",
+            handoffAt: "2026-10-14T12:00:00.000400+00:00",
+            receivedAt: "2026-10-14T12:00:00.000500+00:00",
+          },
+        },
+      });
+
+      await expect(respondToInboundMessage(deps, JOB)).resolves.toEqual({ status: "skipped", reason: "awaiting-human" });
+      expect(evolutionApi.sendText).not.toHaveBeenCalled();
+    });
+
     it("skips inbound received after the handoff without calling the model", async () => {
       const { deps, responder, evolutionApi } = build({
         store: {

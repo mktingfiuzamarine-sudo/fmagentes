@@ -17,6 +17,8 @@ export const DEFAULT_LLM_TIMEOUT_MS = 45_000;
 /** Tool call → tool result → final text. */
 export const MAX_STEPS = 3;
 
+const STEPS_EXHAUSTED_SUMMARY = "O bot não concluiu a resposta (usou todas as etapas em ferramentas). Veja o histórico.";
+
 /** Statuses that mean the agent's configuration is wrong, not that the call failed. */
 const CONFIGURATION_STATUSES = new Set([401, 403, 404]);
 
@@ -71,6 +73,11 @@ export class LlmResponder implements ResponderPort {
 
     const text = result.text.trim();
     if (text.length > 0) return { kind: "reply", text, ...link };
+    // Every step went to tool calls and the step budget ran out before any
+    // text: the customer would get silence, so a human takes over.
+    if (result.steps.length >= MAX_STEPS && result.finishReason === "tool-calls") {
+      return { kind: "handoff", summary: STEPS_EXHAUSTED_SUMMARY, ...link };
+    }
     return { kind: "decline", ...link };
   }
 

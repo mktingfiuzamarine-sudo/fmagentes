@@ -4,7 +4,7 @@ import type { CustomerContext, HistoryMessage, ResponderPort } from "./responder
 import type { CustomerDirectoryPort } from "./customerDirectory";
 import { ConversationBusyError, LockLostError, type ConversationLock, type LockHandle } from "./conversationLock";
 import { DEFAULT_HISTORY_LIMIT } from "./conversationHistory";
-import { laterTimestamp } from "./internal/timestamps";
+import { laterTimestamp, notAfter } from "./internal/timestamps";
 import { createSupabaseRespondStore, type InboundContext, type RespondStore } from "./respondStore";
 import { sendMessage, ConversationNotFoundError } from "./sendMessage";
 
@@ -151,7 +151,7 @@ export async function handOffAfterFailure(
  * anything received later belongs to the human.
  */
 function isOwedHandoffNotice(inbound: InboundContext): boolean {
-  return inbound.handoffAt !== null && Date.parse(inbound.receivedAt) <= Date.parse(inbound.handoffAt);
+  return inbound.handoffAt !== null && notAfter(inbound.receivedAt, inbound.handoffAt);
 }
 
 async function sendPendingHandoffNotice(

@@ -20,6 +20,9 @@ function throwIfError(error: unknown): void {
 
 const digitsOf = (value: string) => value.replace(/\D/g, "");
 
+/** Tries before attachPhone gives up on a notes field that keeps changing. */
+const ATTACH_ATTEMPTS = 3;
+
 /**
  * Direct access to the CRM's Supabase project with its service key (bypasses
  * the CRM's RLS by design — runs server-side only). Never writes phone_digits
@@ -84,20 +87,28 @@ export function createSupabaseCrm(
     },
 
     async attachPhone(clientId, phone) {
-      const current = await findById(clientId);
-      if (!current) throw new Error(`CRM client not found: ${clientId}`);
-
       // Never write `phone`: a CPF typed by a stranger must not make their
       // number identify this client (phone_digits is generated from phone).
       const phoneDigits = digitsOf(phone);
-      if (current.phone && digitsOf(current.phone) === phoneDigits) return;
-      if (current.notes?.includes(phoneDigits)) return;
-
       // Unverified: whoever typed this CPF may not be the client.
       const line = `Outro WhatsApp (não verificado): ${phone}`;
-      const notes = current.notes ? `${current.notes}\n${line}` : line;
-      const result = await supabase.from("clients").update({ notes }).eq("id", clientId);
-      throwIfError(result.error);
+
+      // Compare-and-swap on notes: two conversations attaching at once must
+      // not drop each other's line (a read-modify-write over PostgREST).
+      for (let attempt = 0; attempt < ATTACH_ATTEMPTS; attempt++) {
+        const current = await findById(clientId);
+        if (!current) throw new Error(`CRM client not found: ${clientId}`);
+        if (current.phone && digitsOf(current.phone) === phoneDigits) return;
+        if (current.notes?.includes(phoneDigits)) return;
+
+        const notes = current.notes ? `${current.notes}\n${line}` : line;
+        const update = supabase.from("clients").update({ notes }).eq("id", clientId);
+        const guarded = current.notes === null ? update.is("notes", null) : update.eq("notes", current.notes);
+        const result = await guarded.select("id");
+        throwIfError(result.error);
+        if ((result.data ?? []).length > 0) return;
+      }
+      throw new Error(`CRM client ${clientId}: notes kept changing; phone not attached`);
     },
   };
 }

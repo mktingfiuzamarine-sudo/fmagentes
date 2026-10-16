@@ -102,7 +102,7 @@ describe("createSupabaseCrm", () => {
         const update = calls.find((c) => c.op === "update");
         if (update) {
           updates.push(update.args[0]);
-          return { data: null, error: null };
+          return { data: [{ id: "crm-1" }], error: null };
         }
         return { data: { id: "crm-1", name: "Ana", ...current }, error: null };
       });
@@ -137,6 +137,54 @@ describe("createSupabaseCrm", () => {
       const { crm, updates } = attachScenario({ phone: null, notes: "Outro WhatsApp: 5511988887777" });
       await crm.attachPhone("crm-1", "+55 (11) 98888-7777");
       expect(updates).toEqual([]);
+    });
+
+    it("writes only if notes did not change since the read (M12)", async () => {
+      const guards: TableCall[] = [];
+      const { crm } = crmWith((calls) => {
+        if (calls.some((c) => c.op === "update")) {
+          guards.push(calls.filter((c) => c.op === "eq" || c.op === "is"));
+          return { data: [{ id: "crm-1" }], error: null };
+        }
+        return { data: { id: "crm-1", name: "Ana", phone: null, notes: "VIP" }, error: null };
+      });
+
+      await crm.attachPhone("crm-1", "5511988887777");
+
+      expect(guards).toEqual([[{ op: "eq", args: ["id", "crm-1"] }, { op: "eq", args: ["notes", "VIP"] }]]);
+    });
+
+    it("re-reads and keeps both lines when another conversation wrote notes first (M12)", async () => {
+      const other = "Outro WhatsApp (não verificado): 5511977776666";
+      const updates: unknown[] = [];
+      let reads = 0;
+      const { crm } = crmWith((calls) => {
+        if (calls.some((c) => c.op === "update")) {
+          updates.push(calls.find((c) => c.op === "update")!.args[0]);
+          // The first write loses the race: no row matched the old notes.
+          return { data: updates.length === 1 ? [] : [{ id: "crm-1" }], error: null };
+        }
+        reads++;
+        return { data: { id: "crm-1", name: "Ana", phone: null, notes: reads === 1 ? null : other }, error: null };
+      });
+
+      await crm.attachPhone("crm-1", "5511988887777");
+
+      expect(updates).toEqual([
+        { notes: "Outro WhatsApp (não verificado): 5511988887777" },
+        { notes: `${other}
+Outro WhatsApp (não verificado): 5511988887777` },
+      ]);
+    });
+
+    it("gives up after repeated races so the job can retry later (M12)", async () => {
+      const { crm } = crmWith((calls) =>
+        calls.some((c) => c.op === "update")
+          ? { data: [], error: null }
+          : { data: { id: "crm-1", name: "Ana", phone: null, notes: null }, error: null },
+      );
+
+      await expect(crm.attachPhone("crm-1", "5511988887777")).rejects.toThrow(/notes/);
     });
 
     it("does nothing when the phone is already the client's", async () => {

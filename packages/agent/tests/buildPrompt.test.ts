@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentConfig, HistoryMessage } from "@fmagentes/messaging";
-import { buildPrompt, customerContextBlock, PLATFORM_INSTRUCTIONS } from "../src/buildPrompt";
+import { buildPrompt, customerContextBlock, MAX_PROMPT_MESSAGE_CHARS, PLATFORM_INSTRUCTIONS } from "../src/buildPrompt";
 
 const AGENT: AgentConfig = {
   id: "agent-1",
@@ -150,5 +150,34 @@ describe("buildPrompt", () => {
         { role: "assistant", content: "Olá!" },
       ]);
     });
+  });
+});
+
+describe("buildPrompt caps long messages (M9)", () => {
+  const AGENT_ = { id: "a", name: "A", provider: "anthropic", model: "m", systemPrompt: "x", handoffMessage: "h" };
+
+  it("cuts any message over MAX_PROMPT_MESSAGE_CHARS and says so", () => {
+    const long = "a".repeat(MAX_PROMPT_MESSAGE_CHARS + 500);
+    const incoming = { role: "user" as const, content: long, createdAt: "2026-10-14T12:00:00Z" };
+
+    const prompt = buildPrompt({
+      agent: AGENT_,
+      history: [{ role: "user", content: long, createdAt: "2026-10-14T11:00:00Z" }, incoming],
+      incoming,
+      customer: { status: "registered" },
+    });
+
+    const turns = prompt.slice(2).map((message) => String(message.content));
+    expect(turns).toHaveLength(2);
+    for (const content of turns) {
+      expect(content.length).toBeLessThan(MAX_PROMPT_MESSAGE_CHARS + 100);
+      expect(content).toMatch(/mensagem cortada/);
+    }
+  });
+
+  it("leaves ordinary messages untouched", () => {
+    const incoming = { role: "user" as const, content: "oi", createdAt: "2026-10-14T12:00:00Z" };
+    const prompt = buildPrompt({ agent: AGENT_, history: [incoming], incoming, customer: { status: "registered" } });
+    expect(prompt[2].content).toBe("oi");
   });
 });

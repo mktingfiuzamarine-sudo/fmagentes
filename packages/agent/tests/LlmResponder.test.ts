@@ -122,6 +122,21 @@ describe("LlmResponder", () => {
     await expect(responder.generate(INPUT)).resolves.toEqual({ kind: "decline" });
   });
 
+  it("hands off when every step went to tool calls and no text came out (M10)", async () => {
+    const invalid = { nome: "X", cpf: "111.111.111-11", email: "x@example.com" };
+    const { model, calls } = scripted(
+      toolCall("cadastrar_cliente", invalid, "c1"),
+      toolCall("cadastrar_cliente", invalid, "c2"),
+      toolCall("cadastrar_cliente", invalid, "c3"),
+    );
+    const { responder } = responderWith(model);
+
+    const result = await responder.generate(INPUT);
+
+    expect(calls).toHaveLength(3);
+    expect(result).toEqual({ kind: "handoff", summary: expect.stringMatching(/não concluiu/) });
+  });
+
   it("registers through the tool and reports the link with the reply", async () => {
     const crm = createFakeCrm();
     const { model, calls } = scripted(
