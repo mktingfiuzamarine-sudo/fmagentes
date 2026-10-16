@@ -90,6 +90,22 @@ describe("createRedisConversationLock", () => {
     await next!.release();
   });
 
+  it("stops renewing after maxHoldMs so a hung holder cannot block the conversation forever", async () => {
+    const id = randomUUID();
+    const lock = createRedisConversationLock(redis, 150, { maxHoldMs: 300 });
+
+    const held = await lock.acquire(id);
+    expect(held).not.toBeNull();
+    await wait(600); // past maxHoldMs plus one TTL
+
+    expect(held!.isLost()).toBe(true);
+    const next = await lock.acquire(id);
+    expect(next).not.toBeNull();
+    await held!.release(); // a no-op: the key now holds the successor's nonce
+    expect(await lock.acquire(id)).toBeNull();
+    await next!.release();
+  });
+
   it("reports lost when another holder took the key", async () => {
     const id = randomUUID();
     const lock = createRedisConversationLock(redis, 300);
