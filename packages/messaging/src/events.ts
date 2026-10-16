@@ -26,9 +26,24 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+const PHONE_JID = /^(\d+)@s\.whatsapp\.net$/;
+
 function jidToPhone(jid: unknown): string | null {
-  if (typeof jid !== "string" || !jid.includes("@")) return null;
-  return jid.split("@")[0];
+  if (typeof jid !== "string") return null;
+  return PHONE_JID.exec(jid)?.[1] ?? null;
+}
+
+/**
+ * Only one-to-one chats get a contact phone. Groups (@g.us), status and
+ * broadcast lists (@broadcast) and channels (@newsletter) resolve to null so
+ * the bot never speaks there. A @lid sender is answerable only through the
+ * phone JID Evolution may send alongside it (remoteJidAlt or senderPn).
+ */
+function contactPhoneOf(key: Record<string, unknown>): string | null {
+  const direct = jidToPhone(key.remoteJid);
+  if (direct) return direct;
+  if (typeof key.remoteJid !== "string" || !key.remoteJid.endsWith("@lid")) return null;
+  return jidToPhone(key.remoteJidAlt) ?? jidToPhone(key.senderPn);
 }
 
 function extractText(message: unknown): string | null {
@@ -56,7 +71,7 @@ export function parseEvolutionEvent(body: unknown): EvolutionWebhookEvent | null
   if (event === "messages.upsert") {
     const key = data.key;
     if (!isObject(key) || typeof key.id !== "string") return null;
-    const phone = jidToPhone(key.remoteJid);
+    const phone = contactPhoneOf(key);
     if (!phone) return null;
     return {
       type: "messages.upsert",
