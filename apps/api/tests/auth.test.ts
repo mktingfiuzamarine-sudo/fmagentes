@@ -109,10 +109,19 @@ describe("createSupabaseAuthPort", () => {
   const port = (getUser: unknown) => createSupabaseAuthPort({ auth: { getUser } } as never);
 
   it("maps a verified token to the authenticated user", async () => {
-    const getUser = vi.fn().mockResolvedValue({ data: { user: { id: "u1", email: "a@b.com" } }, error: null });
+    const user = { id: "u1", email: "a@b.com", email_confirmed_at: "2026-10-01T12:00:00Z" };
+    const getUser = vi.fn().mockResolvedValue({ data: { user }, error: null });
 
     expect(await port(getUser).getUser("tok")).toEqual({ id: "u1", email: "a@b.com" });
     expect(getUser).toHaveBeenCalledWith("tok");
+  });
+
+  it("withholds an unconfirmed email so it cannot match the allowlist", async () => {
+    // Otherwise anyone could sign up with a teammate's address before they do.
+    const user = { id: "u1", email: "a@b.com", email_confirmed_at: null };
+    const getUser = vi.fn().mockResolvedValue({ data: { user }, error: null });
+
+    expect(await port(getUser).getUser("tok")).toEqual({ id: "u1", email: null });
   });
 
   it("returns null when Supabase rejects the token", async () => {

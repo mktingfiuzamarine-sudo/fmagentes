@@ -26,7 +26,10 @@ export function createSupabaseAuthPort(client: SupabaseClient): AuthPort {
       if (error || !data?.user) {
         return null;
       }
-      return { id: data.user.id, email: data.user.email ?? null };
+      // An unconfirmed address proves nothing: whoever signs up first with a
+      // teammate's email must not inherit their allowlist entry.
+      const email = data.user.email_confirmed_at ? data.user.email ?? null : null;
+      return { id: data.user.id, email };
     },
   };
 }
