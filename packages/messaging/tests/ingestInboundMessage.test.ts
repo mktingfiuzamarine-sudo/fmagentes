@@ -62,7 +62,9 @@ describe("ingestInboundMessage", () => {
       conversationId: "conv-1",
       instanceId: "inst-1",
     });
-    expect(lookups).toEqual([[["evolution_message_id", "MSG1"]]]);
+    // Scoped to the conversation (M6): the same WhatsApp id can exist in
+    // another conversation, e.g. our own outbound from another number.
+    expect(lookups).toEqual([[["conversation_id", "conv-1"], ["evolution_message_id", "MSG1"]]]);
   });
 
   it("returns null when the duplicate cannot be found any more", async () => {
@@ -114,5 +116,25 @@ describe("ingestInboundMessage keeps last_message_at in step (M8)", () => {
     await ingestInboundMessage(deps(supabase), event);
 
     expect(updates).toEqual([{ last_message_at: expect.any(String) }]);
+  });
+});
+
+describe("ingestInboundMessage dedupes per conversation (M6)", () => {
+  it("treats a message as duplicate only within its own conversation", async () => {
+    let upsertOptions: unknown;
+    const supabase = createSupabaseMock({
+      instances: () => ({ data: { id: "inst-1" }, error: null }),
+      conversations: (calls) =>
+        calls.some((c) => c.op === "upsert") ? { data: null, error: null } : { data: { id: "conv-1" }, error: null },
+      messages: (calls) => {
+        const upsert = calls.find((c) => c.op === "upsert");
+        if (upsert) upsertOptions = upsert.args[1];
+        return { data: [{ id: "msg-1" }], error: null };
+      },
+    });
+
+    await ingestInboundMessage(deps(supabase), event);
+
+    expect(upsertOptions).toEqual({ onConflict: "conversation_id,evolution_message_id", ignoreDuplicates: true });
   });
 });

@@ -51,7 +51,9 @@ export async function ingestInboundMessage(
         evolution_message_id: event.messageId,
         created_at: event.timestamp ? new Date(event.timestamp * 1000).toISOString() : undefined,
       },
-      { onConflict: "evolution_message_id", ignoreDuplicates: true },
+      // Per conversation (0007): the same WhatsApp id can belong to another
+      // conversation, e.g. one of our numbers messaging another.
+      { onConflict: "conversation_id,evolution_message_id", ignoreDuplicates: true },
     )
     .select("id");
   assertNoError(insertMsg.error);
@@ -72,6 +74,7 @@ export async function ingestInboundMessage(
     const existing = await deps.supabase
       .from("messages")
       .select("id, conversation_id")
+      .eq("conversation_id", conversationId)
       .eq("evolution_message_id", event.messageId)
       .maybeSingle();
     assertNoError(existing.error);
