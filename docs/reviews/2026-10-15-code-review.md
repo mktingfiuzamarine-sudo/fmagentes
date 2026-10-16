@@ -197,7 +197,7 @@ O núcleo de mensageria é cuidadoso (lock, marca d'água, idempotência), e a c
 Os riscos reais estão nas bordas: **C1** expõe tudo pela REST do Supabase; **I5** pode fazer o bot falar em grupos;
 **I8** deixa clientes sem resposta hoje mesmo (Anthropic sem crédito); **I6/I7** aparecem sob falhas transitórias.
 
-## Correções aplicadas (branch `fix/review-i1-i5-i7-i8`)
+## Correções aplicadas
 - **I5** — `parseEvolutionEvent` só aceita `@s.whatsapp.net`; `@lid` é resolvido por `remoteJidAlt`/`senderPn` ou ignorado.
 - **I1** — `createSupabaseAuthPort` devolve `email: null` quando `email_confirmed_at` é nulo.
 - **I7** — todos os clientes Supabase do worker com timeout de 10 s (`apps/worker/src/deps.ts`); lock para de renovar
@@ -206,6 +206,13 @@ Os riscos reais estão nas bordas: **C1** expõe tudo pela REST do Supabase; **I
 - **I8** — `handOffAfterFailure` (messaging) marca `awaiting_human` com resumo "Bot indisponível: …" e envia o
   `handoffMessage`; o worker chama em erro de configuração e na última tentativa. O 400 de saldo da Anthropic agora é
   erro de configuração.
+- **I6** — `sendMessage` grava a linha de saída (com `answers_through`) **antes** do `sendText`; se o envio falha, apaga a
+  linha; o `evolution_message_id` é gravado depois, sem falhar o envio. Ressalva: se o envio falha e o delete também, a
+  resposta fica registrada sem ter sido entregue (preferimos “no máximo uma vez”).
+- **I2** — em duplicata, `ingestInboundMessage` devolve os ids da linha já gravada e o webhook enfileira com
+  `jobId: in-<messageId>` (`inboundJobId`). O `in:` sugerido acima não serve: o BullMQ 5 rejeita `:` em ids customizados.
+- **I3** — `/instances` (lista, detalhe, `/qr`, `DELETE`) responde 500 em erro do banco; falha só ao gravar
+  `connecting` no `/qr` vira log, porque o QR continua válido. Repetir o `DELETE` é seguro (Evolution trata 404 como apagado).
 
 ## Ordem sugerida de correção
 1. **C1** — migration 0006 (revoke) + desligar signup no painel do Supabase. *Precisa de confirmação: muda o banco de produção.*
