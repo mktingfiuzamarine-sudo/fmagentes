@@ -1,8 +1,12 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { AppDependencies } from "../app";
-import { INSTANCE_STATUS } from "@fmagentes/shared";
+import { EvolutionApiError, INSTANCE_STATUS } from "@fmagentes/shared";
 
 const WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "CONNECTION_UPDATE", "QRCODE_UPDATED"];
+/** The name becomes an Evolution instance name and a URL path segment. */
+const INSTANCE_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+/** Evolution answers these when it refuses the name itself (already in use, invalid). */
+const NAME_REFUSED = new Set([400, 403, 409]);
 
 export function registerInstanceRoutes(app: FastifyInstance, deps: AppDependencies): void {
   /** A database failure is a 500, never an empty list or a 404 that hides it. */
@@ -15,6 +19,9 @@ export function registerInstanceRoutes(app: FastifyInstance, deps: AppDependenci
     const body = request.body as { name?: unknown } | null;
     const name = body && typeof body.name === "string" ? body.name.trim() : "";
     if (!name) return reply.code(400).send({ error: "name is required" });
+    if (!INSTANCE_NAME.test(name)) {
+      return reply.code(400).send({ error: "name must be 1-64 letters, digits, dashes or underscores" });
+    }
 
     try {
       await deps.evolutionApi.createInstance(name, {
@@ -24,6 +31,9 @@ export function registerInstanceRoutes(app: FastifyInstance, deps: AppDependenci
       });
     } catch (error) {
       app.log.error({ err: error }, "Evolution createInstance failed");
+      if (error instanceof EvolutionApiError && NAME_REFUSED.has(error.status)) {
+        return reply.code(409).send({ error: "name refused by Evolution (probably already in use)" });
+      }
       return reply.code(502).send({ error: "evolution unavailable" });
     }
 

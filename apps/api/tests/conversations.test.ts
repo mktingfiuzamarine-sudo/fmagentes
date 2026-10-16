@@ -134,3 +134,31 @@ describe("POST /conversations/:id/resume", () => {
     await app.close();
   });
 });
+
+describe("unexpected errors (M2)", () => {
+  it("answers a generic 500 without the database's message", async () => {
+    resumeMock.mockImplementationOnce(async () => {
+      throw new Error('relation "secret_table" does not exist');
+    });
+    const app = buildApp(baseDeps());
+
+    const response = await app.inject({ method: "POST", url: `/conversations/${CID}/resume`, headers: AUTH_HEADERS });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.body).not.toContain("secret_table");
+    expect(response.json()).toEqual({ error: "internal error" });
+    await app.close();
+  });
+
+  it("keeps the message of a deliberate 4xx", async () => {
+    const app = buildApp(baseDeps());
+    const response = await app.inject({
+      method: "POST",
+      url: `/conversations/${CID}/messages`,
+      headers: { ...AUTH_HEADERS, "content-type": "application/json" },
+      payload: "{",
+    });
+    expect(response.statusCode).toBeLessThan(500);
+    await app.close();
+  });
+});

@@ -169,3 +169,20 @@ describe("POST /webhooks/evolution", () => {
     await app.close();
   });
 });
+
+describe("webhook hardening (M1, M4)", () => {
+  it("401 for a secret that only shares a prefix with the real one", async () => {
+    const app = buildApp(deps());
+    expect((await post(app, {}, "s3cr3")).statusCode).toBe(401);
+    expect((await post(app, {}, "s3cr3t-and-more")).statusCode).toBe(401);
+    await app.close();
+  });
+
+  it("500 when the connection.update status write fails, so Evolution redelivers", async () => {
+    const d = deps({ supabase: { from: () => ({ update: () => ({ eq: async () => ({ error: { message: "db down" } }) }) }) } as never });
+    const app = buildApp(d);
+
+    expect((await post(app, fixture("connection-update"))).statusCode).toBe(500);
+    await app.close();
+  });
+});

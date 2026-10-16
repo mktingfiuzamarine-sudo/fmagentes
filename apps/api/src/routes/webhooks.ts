@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { AppDependencies } from "../app";
 import { parseEvolutionEvent, ingestInboundMessage, inboundJobId } from "@fmagentes/messaging";
@@ -9,7 +10,7 @@ export function registerWebhookRoute(app: FastifyInstance, deps: AppDependencies
   app.post("/webhooks/evolution", { config: { rateLimit: false } }, async (request, reply) => {
     // `!secret ||` matters: without it a missing header would compare
     // `undefined !== undefined` and authenticate the request.
-    if (!deps.config.webhookSecret || request.headers.apikey !== deps.config.webhookSecret) {
+    if (!deps.config.webhookSecret || !secretsMatch(request.headers.apikey, deps.config.webhookSecret)) {
       return reply.code(401).send({ error: "unauthorized" });
     }
 
@@ -45,7 +46,9 @@ export function registerWebhookRoute(app: FastifyInstance, deps: AppDependencies
             app.log.warn({ err: error, instance: event.instanceName }, "fetchInstance failed during connection.update");
           }
         }
-        await deps.supabase.from("instances").update(patch).eq("evolution_instance_id", event.instanceName);
+        const { error } = await deps.supabase.from("instances").update(patch).eq("evolution_instance_id", event.instanceName);
+        // Thrown into the 500 below, so Evolution redelivers the status.
+        if (error) throw new Error(`instance status update failed: ${error.message}`);
         return reply.code(200).send({ received: true });
       }
 
@@ -57,4 +60,11 @@ export function registerWebhookRoute(app: FastifyInstance, deps: AppDependencies
       return reply.code(500).send({ received: false });
     }
   });
+}
+
+/** Constant-time comparison: hashing first makes the lengths equal, as timingSafeEqual requires. */
+function secretsMatch(given: unknown, expected: string): boolean {
+  if (typeof given !== "string") return false;
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  return timingSafeEqual(digest(given), digest(expected));
 }

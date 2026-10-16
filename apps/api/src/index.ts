@@ -9,14 +9,16 @@ import { loadEnv, parseTrustProxy } from "./env";
 const env = loadEnv();
 
 const redis = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
-const supabase = createSupabaseClient({ url: env.SUPABASE_URL, serviceKey: env.SUPABASE_SERVICE_KEY });
+// Every client gets a timeout: a hung fetch would otherwise hold the request forever.
+const SUPABASE_TIMEOUT_MS = 10_000;
+const supabase = createSupabaseClient({ url: env.SUPABASE_URL, serviceKey: env.SUPABASE_SERVICE_KEY, timeoutMs: SUPABASE_TIMEOUT_MS });
 const evolutionApi = createEvolutionApiClient({ baseUrl: env.EVOLUTION_API_URL, apiKey: env.EVOLUTION_API_KEY });
 const inboundQueue = createInboundQueue(redis);
 
 // Token verification runs on a separate anon-key client: the service-key client
 // above bypasses auth entirely and would never reject a caller's token.
 const auth = createSupabaseAuthPort(
-  createSupabaseClient({ url: env.SUPABASE_URL, serviceKey: env.SUPABASE_ANON_KEY }),
+  createSupabaseClient({ url: env.SUPABASE_URL, serviceKey: env.SUPABASE_ANON_KEY, timeoutMs: SUPABASE_TIMEOUT_MS }),
 );
 
 const allowedUsers = env.API_ALLOWED_USERS.split(",")
@@ -30,7 +32,7 @@ if (allowedUsers.length === 0) {
 const customerNames =
   env.CRM_SUPABASE_URL && env.CRM_SUPABASE_SERVICE_KEY
     ? createSupabaseCustomerNames(
-        createSupabaseClient({ url: env.CRM_SUPABASE_URL, serviceKey: env.CRM_SUPABASE_SERVICE_KEY, timeoutMs: 10_000 }),
+        createSupabaseClient({ url: env.CRM_SUPABASE_URL, serviceKey: env.CRM_SUPABASE_SERVICE_KEY, timeoutMs: SUPABASE_TIMEOUT_MS }),
       )
     : undefined;
 

@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { apiFetch } from "../../../lib/browserApi";
-import { ApiError } from "../../../lib/api";
+import { createInstanceErrorMessage } from "../../../lib/instanceErrors";
 import { formatPhone } from "../../../lib/format";
 import { usePolling } from "../../../lib/usePolling";
 import type { InstanceRow } from "../../../lib/types";
@@ -35,7 +35,7 @@ export default function InstancesPage() {
       await list.refresh();
       setQrFor(row.id);
     } catch (error) {
-      setMessage(error instanceof ApiError && error.status === 502 ? "A Evolution API não respondeu." : "Não foi possível criar o número.");
+      setMessage(createInstanceErrorMessage(error));
     } finally {
       setBusy(false);
     }

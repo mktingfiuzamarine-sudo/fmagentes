@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { EvolutionApiError } from "@fmagentes/shared";
 import { buildApp, type AppDependencies } from "../src/app";
 import { AUTH_HEADERS, TEST_ALLOWED_USERS, testAuth } from "./helpers/auth";
 
@@ -183,5 +184,38 @@ describe("instance routes report database failures (I3)", () => {
   it("DELETE /instances/:id answers 500 when the row survives, so the caller retries", async () => {
     const response = await call(failing({ delete: true }), "DELETE", "/instances/inst-1");
     expect(response.statusCode).toBe(500);
+  });
+});
+
+describe("POST /instances input and Evolution refusals (M3)", () => {
+  async function create(d: AppDependencies, name: unknown) {
+    const app = buildApp(d);
+    const response = await app.inject({ method: "POST", url: "/instances", payload: { name }, headers: AUTH_HEADERS });
+    await app.close();
+    return response;
+  }
+
+  it("400 for a name Evolution cannot use, without calling it", async () => {
+    const createInstance = vi.fn();
+    for (const name of ["acme loja", "acme/1", "a".repeat(65), "ação"]) {
+      expect((await create(deps({ createInstance }), name)).statusCode).toBe(400);
+    }
+    expect(createInstance).not.toHaveBeenCalled();
+  });
+
+  it("accepts letters, digits, dash and underscore", async () => {
+    expect((await create(deps(), "Acme_loja-2")).statusCode).toBe(201);
+  });
+
+  it("409 when Evolution refuses the name (taken)", async () => {
+    const createInstance = vi.fn().mockRejectedValue(new EvolutionApiError(403, "Forbidden"));
+    expect((await create(deps({ createInstance }), "acme")).statusCode).toBe(409);
+  });
+
+  it("502 when Evolution rejects our credentials or is down", async () => {
+    for (const status of [401, 500]) {
+      const createInstance = vi.fn().mockRejectedValue(new EvolutionApiError(status, "x"));
+      expect((await create(deps({ createInstance }), "acme")).statusCode).toBe(502);
+    }
   });
 });

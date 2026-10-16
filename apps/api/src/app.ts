@@ -69,9 +69,17 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     }
   });
 
-  app.setErrorHandler((error, _request, reply) => {
-    reply.send(error);
+  // A 5xx message can carry database or provider internals: log it, answer
+  // generically. Deliberate 4xx (validation, rate limit) keep their message.
+  app.setErrorHandler((error, request, reply) => {
+    const status = error.statusCode ?? 500;
+    if (status < 500) return reply.send(error);
+    request.log.error({ err: error }, "Unhandled error");
+    return reply.code(status).send({ error: "internal error" });
   });
+
+  // No CORS on purpose: the dashboard reaches the API through its own /api
+  // proxy (same origin). Never enable origin "*" — the API takes bearer tokens.
 
   // Runs onRequest, before the auth preHandler, so a flood of bad tokens never
   // reaches Supabase Auth. Routes are declared in the plugin below, which loads
