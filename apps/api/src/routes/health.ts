@@ -4,6 +4,9 @@ import type { AppDependencies } from "../app";
 /** How long one probe of the dependencies answers every /health call. */
 export const HEALTH_CACHE_MS = 5000;
 
+/** How long each dependency gets to answer before it is reported unavailable. */
+export const HEALTH_CHECK_TIMEOUT_MS = 3000;
+
 interface HealthReport {
   supabase: "connected" | "unavailable";
   redis: "connected" | "unavailable";
@@ -31,15 +34,29 @@ export function registerHealthRoute(app: FastifyInstance, deps: AppDependencies,
 
 async function probe(deps: AppDependencies): Promise<HealthReport> {
   const [supabaseOk, redisOk, evolutionOk] = await Promise.all([
-    checkSupabase(deps),
-    checkRedis(deps),
-    checkEvolutionApi(deps),
+    withTimeout(checkSupabase(deps)),
+    withTimeout(checkRedis(deps)),
+    withTimeout(checkEvolutionApi(deps)),
   ]);
   return {
     supabase: supabaseOk ? "connected" : "unavailable",
     redis: redisOk ? "connected" : "unavailable",
     evolutionApi: evolutionOk ? "connected" : "unavailable",
   };
+}
+
+// A dependency that never settles (ioredis queues commands while Redis is
+// down) must read as unavailable, not hang the probe and every caller with it.
+async function withTimeout(check: Promise<boolean>): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), HEALTH_CHECK_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([check, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function checkSupabase(deps: AppDependencies): Promise<boolean> {

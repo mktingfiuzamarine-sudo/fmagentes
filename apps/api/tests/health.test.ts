@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Redis } from "ioredis";
 import { buildApp, type AppDependencies } from "../src/app";
+import { HEALTH_CHECK_TIMEOUT_MS } from "../src/routes/health";
 import { TEST_ALLOWED_USERS, testAuth } from "./helpers/auth";
 import type { FastifyInstance } from "fastify";
 
@@ -81,4 +82,27 @@ describe("GET /health", () => {
 
     await unhealthyApp.close();
   });
+});
+
+describe("GET /health with a dependency that never answers", () => {
+  it("reports it unavailable within the probe timeout instead of hanging", async () => {
+    // ioredis with maxRetriesPerRequest: null (needed by BullMQ) queues commands
+    // while the server is down, so ping() never settles.
+    const deps: AppDependencies = {
+      redis: { ping: () => new Promise(() => {}) } as never,
+      supabase: { from: () => ({ select: () => ({ limit: async () => ({ error: null }) }) }) } as never,
+      evolutionApi: { checkConnection: async () => true } as never,
+      inboundQueue: { add: async () => ({ id: "1" }) } as never,
+      auth: testAuth(),
+      config: { webhookSecret: "test-secret", publicWebhookUrl: "https://cb.example.com", allowedUsers: TEST_ALLOWED_USERS },
+    };
+    const app = buildApp(deps);
+
+    const response = await app.inject({ method: "GET", url: "/health" });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ supabase: "connected", redis: "unavailable", evolutionApi: "connected" });
+
+    await app.close();
+  }, HEALTH_CHECK_TIMEOUT_MS + 2000);
 });
