@@ -53,6 +53,7 @@ describe("GET /conversations", () => {
           lastMessage: { direction: "in", content: "Alguém aí?", createdAt: "2026-10-15T12:00:01.000Z" },
           awaitingReply: true,
           crmLinkVia: null,
+          customerName: null,
         },
       ],
       counts: { handoff: 3, mine: 1 },
@@ -101,6 +102,57 @@ describe("GET /conversations", () => {
     expect((await get(app, "/conversations?view=bogus")).statusCode).toBe(400);
     await app.close();
   });
+
+  it("names phone- and created-linked customers with one CRM lookup, never CPF-linked ones", async () => {
+    const store = fakeDashboardStore({
+      listInbox: vi.fn().mockResolvedValue([
+        inboxRow({ id: "c1", crmClientId: "crm-1", crmLinkVia: "phone" }),
+        inboxRow({ id: "c2", crmClientId: "crm-2", crmLinkVia: "created" }),
+        inboxRow({ id: "c3", crmClientId: "crm-3", crmLinkVia: "cpf" }),
+        inboxRow({ id: "c4" }),
+        inboxRow({ id: "c5", crmClientId: "crm-1", crmLinkVia: "phone" }),
+      ]),
+    });
+    const customerNames = {
+      findNames: vi.fn().mockResolvedValue(
+        new Map([["crm-1", "Carla Mendes"], ["crm-2", "Bruno Teste"], ["crm-3", "Dono do CPF"]]),
+      ),
+    };
+    const app = buildApp(deps(store, { customerNames }));
+
+    const items = (await get(app, "/conversations?view=all")).json().items as { customerName: string | null }[];
+
+    expect(items.map((i) => i.customerName)).toEqual(["Carla Mendes", "Bruno Teste", null, null, "Carla Mendes"]);
+    expect(customerNames.findNames).toHaveBeenCalledTimes(1);
+    expect(customerNames.findNames).toHaveBeenCalledWith(["crm-1", "crm-2"]);
+    await app.close();
+  });
+
+  it("skips the CRM when no listed conversation is name-linked", async () => {
+    const store = fakeDashboardStore({ listInbox: vi.fn().mockResolvedValue([inboxRow()]) });
+    const customerNames = { findNames: vi.fn() };
+    const app = buildApp(deps(store, { customerNames }));
+    await get(app, "/conversations");
+    expect(customerNames.findNames).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("CRM failure or absence still lists with customerName null", async () => {
+    const store = fakeDashboardStore({
+      listInbox: vi.fn().mockResolvedValue([inboxRow({ crmClientId: "crm-1", crmLinkVia: "phone" })]),
+    });
+    const failing = { findNames: vi.fn().mockRejectedValue(new Error("CRM down")) };
+
+    const withFailing = buildApp(deps(store, { customerNames: failing }));
+    const r1 = await get(withFailing, "/conversations");
+    expect(r1.statusCode).toBe(200);
+    expect(r1.json().items[0].customerName).toBeNull();
+    await withFailing.close();
+
+    const withoutCrm = buildApp(deps(store));
+    expect((await get(withoutCrm, "/conversations")).json().items[0].customerName).toBeNull();
+    await withoutCrm.close();
+  });
 });
 
 describe("GET /conversations/:id", () => {
@@ -127,7 +179,7 @@ describe("GET /conversations/:id", () => {
       ]),
       displayNames: vi.fn().mockResolvedValue(new Map([["u9", "Ana"]])),
     });
-    const customerNames = { findName: vi.fn().mockResolvedValue("Carla Mendes") };
+    const customerNames = { findNames: vi.fn().mockResolvedValue(new Map([["crm-1", "Carla Mendes"]])) };
     const app = buildApp(deps(store, { customerNames }));
 
     const body = (await get(app, `/conversations/${CONV_ID}`)).json();
@@ -143,13 +195,13 @@ describe("GET /conversations/:id", () => {
     const store = fakeDashboardStore({
       getInboxRow: vi.fn().mockResolvedValue(inboxRow({ crmClientId: "crm-1", crmLinkVia: "cpf" })),
     });
-    const customerNames = { findName: vi.fn().mockResolvedValue("Dono do CPF") };
+    const customerNames = { findNames: vi.fn().mockResolvedValue(new Map([["crm-1", "Dono do CPF"]])) };
     const app = buildApp(deps(store, { customerNames }));
 
     const body = (await get(app, `/conversations/${CONV_ID}`)).json();
 
     expect(body.customer).toEqual({ linkVia: "cpf", unverified: true });
-    expect(customerNames.findName).not.toHaveBeenCalled();
+    expect(customerNames.findNames).not.toHaveBeenCalled();
     await app.close();
   });
 
@@ -157,7 +209,7 @@ describe("GET /conversations/:id", () => {
     const store = fakeDashboardStore({
       getInboxRow: vi.fn().mockResolvedValue(inboxRow({ crmClientId: "crm-1", crmLinkVia: "created" })),
     });
-    const failing = { findName: vi.fn().mockRejectedValue(new Error("CRM down")) };
+    const failing = { findNames: vi.fn().mockRejectedValue(new Error("CRM down")) };
 
     const withFailing = buildApp(deps(store, { customerNames: failing }));
     const r1 = await get(withFailing, `/conversations/${CONV_ID}`);

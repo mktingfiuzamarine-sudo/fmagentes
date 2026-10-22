@@ -23,6 +23,7 @@
 .item { display: block; width: 100%; text-align: left; padding: 12px; border: 0; border-bottom: 1px solid var(--border); background: none; cursor: pointer; color: inherit; }
 .itemSelected { background: var(--mine); }
 .itemTitle { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; }
+.itemPhone { color: var(--muted); font-weight: 400; font-size: 12px; }
 .itemPreview { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .awaiting { color: var(--accent); font-weight: 600; font-size: 12px; }
 .pane { display: flex; flex-direction: column; gap: 12px; min-height: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }

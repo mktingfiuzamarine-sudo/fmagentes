@@ -21,6 +21,8 @@ export interface ConversationListItem {
   lastMessage: { direction: "in" | "out"; content: string; createdAt: string } | null;
   awaitingReply: boolean;
   crmLinkVia: "phone" | "cpf" | "created" | null;
+  /** CRM name; null when unlinked, CPF-linked, or the CRM is unavailable. */
+  customerName: string | null;
 }
 
 export interface InboxResponse {

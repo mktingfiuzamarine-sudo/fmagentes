@@ -19,7 +19,29 @@ function truncate(text: string, max: number): string {
   return chars.length <= max ? text : `${chars.slice(0, max - 1).join("")}…`;
 }
 
-export function toListItem(row: InboxRow, names: Map<string, string>) {
+/** A CPF link never names the client: whoever typed the CPF may not own it. */
+function namedClientId(row: InboxRow): string | null {
+  return row.crmClientId && (row.crmLinkVia === "phone" || row.crmLinkVia === "created") ? row.crmClientId : null;
+}
+
+/** CRM trouble degrades to "no names", never to an error. */
+export async function lookupCustomerNames(
+  rows: InboxRow[],
+  port: CustomerNamePort | undefined,
+  log: FastifyBaseLogger,
+): Promise<Map<string, string>> {
+  const ids = [...new Set(rows.map(namedClientId).filter((id): id is string => id !== null))];
+  if (!port || ids.length === 0) return new Map();
+  try {
+    return await port.findNames(ids);
+  } catch (error) {
+    log.warn({ err: error }, "CRM name lookup failed");
+    return new Map();
+  }
+}
+
+export function toListItem(row: InboxRow, names: Map<string, string>, customers: Map<string, string>) {
+  const clientId = namedClientId(row);
   return {
     id: row.id,
     contactPhone: row.contactPhone,
@@ -33,6 +55,7 @@ export function toListItem(row: InboxRow, names: Map<string, string>) {
       : null,
     awaitingReply: row.lastMessage?.direction === "in",
     crmLinkVia: row.crmLinkVia,
+    customerName: clientId ? customers.get(clientId) ?? null : null,
   };
 }
 
@@ -47,22 +70,8 @@ export function toMessage(message: MessageRow, names: Map<string, string>) {
   };
 }
 
-/**
- * A CPF link never reveals the stored client: whoever typed the CPF may not
- * own it. CRM trouble degrades to "name unavailable", never to an error.
- */
-export async function resolveCustomer(
-  row: InboxRow,
-  port: CustomerNamePort | undefined,
-  log: FastifyBaseLogger,
-): Promise<CustomerView> {
+export function toCustomerView(row: InboxRow, customers: Map<string, string>): CustomerView {
   if (!row.crmLinkVia || !row.crmClientId) return { linkVia: null };
   if (row.crmLinkVia === "cpf") return { linkVia: "cpf", unverified: true };
-  if (!port) return { linkVia: row.crmLinkVia, name: null };
-  try {
-    return { linkVia: row.crmLinkVia, name: await port.findName(row.crmClientId) };
-  } catch (error) {
-    log.warn({ err: error }, "CRM name lookup failed");
-    return { linkVia: row.crmLinkVia, name: null };
-  }
+  return { linkVia: row.crmLinkVia, name: customers.get(row.crmClientId) ?? null };
 }

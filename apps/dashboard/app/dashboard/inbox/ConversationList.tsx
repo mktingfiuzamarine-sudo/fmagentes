@@ -26,7 +26,13 @@ export function ConversationList(props: {
           onClick={() => props.onSelect(item.id)}
         >
           <div className={ui.itemTitle}>
-            <span>{formatPhone(item.contactPhone)}</span>
+            {item.customerName ? (
+              <span>
+                {item.customerName} <span className={ui.itemPhone}>{formatPhone(item.contactPhone)}</span>
+              </span>
+            ) : (
+              <span>{formatPhone(item.contactPhone)}</span>
+            )}
             <span className={ui.muted}>{item.lastMessage ? formatRelative(item.lastMessage.createdAt) : ""}</span>
           </div>
           {item.handoffSummary ? <div className={ui.itemPreview}>{item.handoffSummary}</div> : null}

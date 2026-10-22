@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { dashboardStore, type AppDependencies } from "../app";
 import { isUuid } from "../dashboard/uuid";
 import type { InboxView } from "../dashboard/store";
-import { resolveCustomer, toListItem, toMessage } from "../dashboard/present";
+import { lookupCustomerNames, toCustomerView, toListItem, toMessage } from "../dashboard/present";
 
 const VIEWS: readonly InboxView[] = ["handoff", "all", "mine"];
 const DETAIL_MESSAGE_LIMIT = 100;
@@ -15,8 +15,11 @@ export function registerInboxRoutes(app: FastifyInstance, deps: AppDependencies)
     const store = dashboardStore(deps);
     const me = request.user!.id;
     const [rows, counts] = await Promise.all([store.listInbox(view as InboxView, me), store.countInbox(me)]);
-    const names = await store.displayNames(rows.flatMap((row) => (row.assignedTo ? [row.assignedTo] : [])));
-    return { items: rows.map((row) => toListItem(row, names)), counts };
+    const [names, customers] = await Promise.all([
+      store.displayNames(rows.flatMap((row) => (row.assignedTo ? [row.assignedTo] : []))),
+      lookupCustomerNames(rows, deps.customerNames, request.log),
+    ]);
+    return { items: rows.map((row) => toListItem(row, names, customers)), counts };
   });
 
   // For the dashboard shell's badge: counting is all it needs, so it does not
@@ -31,14 +34,18 @@ export function registerInboxRoutes(app: FastifyInstance, deps: AppDependencies)
     const row = await store.getInboxRow(id);
     if (!row) return reply.code(404).send({ error: "conversation not found" });
 
-    const [messages, customer] = await Promise.all([
+    const [messages, customers] = await Promise.all([
       store.listMessages(id, DETAIL_MESSAGE_LIMIT),
-      resolveCustomer(row, deps.customerNames, request.log),
+      lookupCustomerNames([row], deps.customerNames, request.log),
     ]);
     const people = [row.assignedTo, ...messages.map((m) => m.sentBy)].filter((v): v is string => Boolean(v));
     const names = await store.displayNames(people);
 
-    return { ...toListItem(row, names), messages: messages.map((m) => toMessage(m, names)), customer };
+    return {
+      ...toListItem(row, names, customers),
+      messages: messages.map((m) => toMessage(m, names)),
+      customer: toCustomerView(row, customers),
+    };
   });
 
   app.post("/conversations/:id/assign", async (request, reply) => {
