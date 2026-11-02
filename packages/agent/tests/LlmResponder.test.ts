@@ -123,7 +123,7 @@ describe("LlmResponder", () => {
   });
 
   it("hands off when every step went to tool calls and no text came out (M10)", async () => {
-    const invalid = { nome: "X", cpf: "111.111.111-11", email: "x@example.com" };
+    const invalid = { nome: "X", cpf_cnpj: "111.111.111-11", email: "x@example.com" };
     const { model, calls } = scripted(
       toolCall("cadastrar_cliente", invalid, "c1"),
       toolCall("cadastrar_cliente", invalid, "c2"),
@@ -140,7 +140,7 @@ describe("LlmResponder", () => {
   it("registers through the tool and reports the link with the reply", async () => {
     const crm = createFakeCrm();
     const { model, calls } = scripted(
-      toolCall("cadastrar_cliente", { nome: "Bruno Lima", cpf: "529.982.247-25", email: "bruno@example.com" }),
+      toolCall("cadastrar_cliente", { nome: "Bruno Lima", cpf_cnpj: "529.982.247-25", email: "bruno@example.com" }),
       text("Pronto, cadastro feito! Em que posso ajudar?"),
     );
     const { responder } = responderWith(model, { crm });
