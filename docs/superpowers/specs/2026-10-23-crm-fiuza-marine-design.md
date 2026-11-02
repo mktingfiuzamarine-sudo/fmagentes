@@ -26,6 +26,11 @@ O dono tem um medo explícito: que campos obrigatórios deixem o atendimento
 > dar. A obrigatoriedade é uma trava **para a equipe**, aplicada só quando um
 > humano avança o card de etapa.
 
+**Exceção decidida pelo dono (2026-11-02):** o cadastro inicial do cliente.
+Para número desconhecido, a IA continua pedindo nome + CPF/CNPJ + e-mail
+antes de gravar qualquer coisa, como hoje. Depois que o cliente existe, vale
+a regra acima para todo o resto (ficha, embarcações, negócios).
+
 ## Objetivos
 
 1. 4 funis com etapas próprias, cada um com seu quadro de arrastar cards.
@@ -188,6 +193,15 @@ embarcações e negócios. Continua-se registrando quem criou cada registro
   o item se ainda não existir).
 - Nunca pergunta, sugere ou grava valores; nunca move cards.
 - Continua podendo transferir para humano como hoje.
+- **Número desconhecido:** pede nome + CPF/CNPJ + e-mail antes de cadastrar
+  (comportamento atual de `customerContextBlock`/`cadastrar_cliente`, agora
+  aceitando CNPJ também). Sem os três, não grava ficha, embarcação nem negócio.
+- **Vinculado por CPF/CNPJ digitado (não verificado):** a IA pode criar
+  negócios e embarcações **novos** nesse cliente, mas não lê nem altera nada
+  que já existe (ficha, embarcações, negócios); a equipe confere. A checagem
+  de duplicidade (decisão 4) não roda nesse caso — negócio duplicado de vez em
+  quando é custo aceito. As ferramentas precisam saber como o vínculo foi
+  feito (`CustomerContext` hoje só tem registered/unregistered + nome).
 
 ## Decisões minhas (o dono pode vetar ao ler)
 
@@ -257,22 +271,12 @@ embarcações e negócios. Continua-se registrando quem criou cada registro
 - Testes: o padrão dos dois repositórios é TDD; testes de RLS/RPC no CRM e
   testes unitários das ferramentas no `packages/agent`.
 
-## Pendências para o dono
+## Respostas do dono à revisão (2026-11-02)
 
-Revisão do construtor feita em 2026-10-23. Duas perguntas foram levadas ao
-dono e **ainda não foram respondidas** (ele pausou a sessão). Documento NÃO
-aprovado ainda.
+1. **O que a IA exige antes de gravar:** manter como está — nome + CPF/CNPJ +
+   e-mail antes de cadastrar. (Sugestão de cadastrar só com o nome foi
+   recusada.) Ver a exceção em "Intenção" e "Comportamento da IA".
+2. **Vínculo por CPF/CNPJ digitado:** IA só cria negócios e embarcações novos;
+   não lê nem altera o que já existe. Ver "Comportamento da IA".
 
-1. **O que a IA exige antes de começar a gravar?** Hoje, para número
-   desconhecido, `customerContextBlock` manda pedir nome + CPF + e-mail antes
-   de prosseguir e `cadastrar_cliente` exige os três — contradiz a regra
-   central. Sugestão levada: criar o cliente assim que souber o nome (com o
-   WhatsApp da conversa) e pedir CPF/CNPJ e e-mail só quando o atendimento
-   precisar (ex.: ao gerar proposta). Implica novo tipo de vínculo além de
-   `cpf | created`, novo prompt e novos métodos no `CrmPort`.
-2. **Vínculo por CPF/CNPJ digitado (não verificado):** sugestão levada: a IA
-   pode criar negócios e embarcações novos nesse cliente, mas não lê nem altera
-   o que já existe (a equipe confere). Custo aceito: negócio duplicado de vez
-   em quando, já que a checagem de duplicidade (decisão 4) não roda nesse caso.
-   Implica as ferramentas saberem como o vínculo foi feito (`CustomerContext`
-   hoje só tem registered/unregistered + nome).
+Documento aguardando aprovação final do dono (incluindo "Decisões minhas").
