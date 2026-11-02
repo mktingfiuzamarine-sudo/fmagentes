@@ -17,11 +17,11 @@ const assistant = (content: string, n = 0): HistoryMessage => ({ role: "assistan
 
 describe("customerContextBlock", () => {
   it("names a registered customer", () => {
-    expect(customerContextBlock({ status: "registered", name: "Ana Souza" })).toBe("Cliente cadastrado: Ana Souza. Trate o cliente pelo nome.");
+    expect(customerContextBlock({ status: "registered", crmClientId: "crm-1", verified: true, name: "Ana Souza" })).toBe("Cliente cadastrado: Ana Souza. Trate o cliente pelo nome.");
   });
 
   it("omits the name when there is none (CPF link)", () => {
-    expect(customerContextBlock({ status: "registered" })).toBe("Cliente cadastrado.");
+    expect(customerContextBlock({ status: "registered", crmClientId: "crm-1", verified: false })).toBe("Cliente cadastrado.");
   });
 
   it("tells the model to register an unregistered customer", () => {
@@ -46,7 +46,7 @@ describe("buildPrompt", () => {
 
   it("keeps the cached block identical across customers", () => {
     const a = buildPrompt({ agent: AGENT, history: [user("oi")], incoming: user("oi"), customer: { status: "unregistered" } });
-    const b = buildPrompt({ agent: AGENT, history: [user("oi")], incoming: user("oi"), customer: { status: "registered", name: "Ana" } });
+    const b = buildPrompt({ agent: AGENT, history: [user("oi")], incoming: user("oi"), customer: { status: "registered", crmClientId: "crm-1", verified: true, name: "Ana" } });
     expect(a[0]).toEqual(b[0]);
   });
 
@@ -55,7 +55,7 @@ describe("buildPrompt", () => {
       agent: AGENT,
       history: [user("oi", 0), assistant("Olá!", 1), user("qual o horário?", 2)],
       incoming: user("qual o horário?", 2),
-      customer: { status: "registered", name: "Ana" },
+      customer: { status: "registered", crmClientId: "crm-1", verified: true, name: "Ana" },
     });
 
     expect(messages.slice(2)).toEqual([
@@ -164,7 +164,7 @@ describe("buildPrompt caps long messages (M9)", () => {
       agent: AGENT_,
       history: [{ role: "user", content: long, createdAt: "2026-10-14T11:00:00Z" }, incoming],
       incoming,
-      customer: { status: "registered" },
+      customer: { status: "registered", crmClientId: "crm-1", verified: false },
     });
 
     const turns = prompt.slice(2).map((message) => String(message.content));
@@ -177,7 +177,7 @@ describe("buildPrompt caps long messages (M9)", () => {
 
   it("leaves ordinary messages untouched", () => {
     const incoming = { role: "user" as const, content: "oi", createdAt: "2026-10-14T12:00:00Z" };
-    const prompt = buildPrompt({ agent: AGENT_, history: [incoming], incoming, customer: { status: "registered" } });
+    const prompt = buildPrompt({ agent: AGENT_, history: [incoming], incoming, customer: { status: "registered", crmClientId: "crm-1", verified: false } });
     expect(prompt[2].content).toBe("oi");
   });
 });

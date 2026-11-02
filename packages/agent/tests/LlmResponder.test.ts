@@ -93,7 +93,7 @@ describe("LlmResponder", () => {
     expect(toolNames(first.calls[0])).toEqual(["cadastrar_cliente", "transferir_para_humano"]);
 
     const second = scripted(text("ok"));
-    await responderWith(second.model).responder.generate({ ...INPUT, customer: { status: "registered", name: "Ana" } });
+    await responderWith(second.model).responder.generate({ ...INPUT, customer: { status: "registered", crmClientId: "crm-1", verified: true, name: "Ana" } });
     expect(toolNames(second.calls[0])).toEqual(["transferir_para_humano"]);
   });
 

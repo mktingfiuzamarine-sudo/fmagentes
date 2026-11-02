@@ -354,7 +354,7 @@ describe("respondToInboundMessage", () => {
       expect(customerDirectory.findByPhone).toHaveBeenCalledWith("5511999998888");
       expect(store.linkCustomer).toHaveBeenCalledWith("conv-1", "crm-1", "phone");
       expect(responder.generate).toHaveBeenCalledWith(
-        expect.objectContaining({ customer: { status: "registered", name: "Ana Souza" } }),
+        expect.objectContaining({ customer: { status: "registered", crmClientId: "crm-1", verified: true, name: "Ana Souza" } }),
       );
     });
 
@@ -370,7 +370,7 @@ describe("respondToInboundMessage", () => {
       expect(customerDirectory.findById).toHaveBeenCalledWith("crm-1");
       expect(store.linkCustomer).not.toHaveBeenCalled();
       expect(responder.generate).toHaveBeenCalledWith(
-        expect.objectContaining({ customer: { status: "registered", name: "Ana Souza" } }),
+        expect.objectContaining({ customer: { status: "registered", crmClientId: "crm-1", verified: true, name: "Ana Souza" } }),
       );
     });
 
@@ -383,7 +383,7 @@ describe("respondToInboundMessage", () => {
       await respondToInboundMessage(deps, JOB);
 
       expect(customerDirectory.findById).not.toHaveBeenCalled();
-      expect(responder.generate).toHaveBeenCalledWith(expect.objectContaining({ customer: { status: "registered" } }));
+      expect(responder.generate).toHaveBeenCalledWith(expect.objectContaining({ customer: { status: "registered", crmClientId: "crm-1", verified: false } }));
     });
 
     it("treats a linked client deleted from the CRM as unregistered", async () => {
