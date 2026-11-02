@@ -18,3 +18,10 @@ describe("catalog", () => {
     expect(all.filter((f) => f.startsWith("olist_"))).toEqual([]);
   });
 });
+
+// compile-time check: VesselFieldId excludes notes
+import type { VesselFieldId } from "../src/crm/catalog";
+const _ok: VesselFieldId = "hull_type";
+// @ts-expect-error notes is not fillable
+const _bad: VesselFieldId = "notes";
+void _ok; void _bad;

@@ -85,7 +85,7 @@ export const CLIENT_FIELD_LABELS: Record<string, string> = {
   company: "Empresa",
 };
 
-export const VESSEL_FIELD_LABELS: Record<string, string> = {
+export const VESSEL_FIELD_LABELS = {
   hull_type: "Tipo de casco",
   builder: "Estaleiro/marca",
   length_m: "Tamanho (m)",
@@ -100,7 +100,7 @@ export const VESSEL_FIELD_LABELS: Record<string, string> = {
   model: "Modelo",
   year: "Ano de fabricação",
   notes: "Observações",
-};
+} as const satisfies Record<string, string>;
 
 /** Colunas de embarcação que a IA pode preencher (tudo menos `notes`). */
 export type VesselFieldId = Exclude<keyof typeof VESSEL_FIELD_LABELS, "notes">;
