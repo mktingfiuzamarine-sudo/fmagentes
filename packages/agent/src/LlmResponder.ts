@@ -9,9 +9,12 @@ import {
   type ResponderResult,
 } from "@fmagentes/messaging";
 import { buildPrompt } from "./buildPrompt";
-import type { CrmPort } from "./crm/CrmPort";
+import type { CrmPort, CrmScope, CrmSnapshot } from "./crm/CrmPort";
 import { HANDOFF_TOOL_NAME, handoffTool } from "./tools/handoff";
-import { createRegisterCustomerTool, type RegistrationOutcome } from "./tools/registerCustomer";
+import { createRegisterCustomerTool, REGISTER_TOOL_NAME, type RegistrationOutcome } from "./tools/registerCustomer";
+import { createRegisterDealTool, REGISTER_DEAL_TOOL_NAME } from "./tools/registerDeal";
+import { createRegisterVesselTool, REGISTER_VESSEL_TOOL_NAME } from "./tools/registerVessel";
+import { createUpdateCustomerTool, UPDATE_CUSTOMER_TOOL_NAME } from "./tools/updateCustomer";
 
 export const DEFAULT_LLM_TIMEOUT_MS = 45_000;
 /** Tool call → tool result → final text. */
@@ -38,20 +41,33 @@ export class LlmResponder implements ResponderPort {
     const outcome: RegistrationOutcome = {};
 
     // Registration is only offered while the customer is unregistered, so a
-    // registered conversation can never be re-linked by the model.
-    const tools: Record<string, CoreTool> =
-      input.customer.status === "unregistered"
-        ? {
-            transferir_para_humano: handoffTool,
-            cadastrar_cliente: createRegisterCustomerTool(this.options.crm, input.contactPhone, outcome),
-          }
-        : { transferir_para_humano: handoffTool };
+    // registered conversation can never be re-linked by the model. CRM writes
+    // need a registered customer; the ficha is only writable on a verified link.
+    const { customer } = input;
+    let tools: Record<string, CoreTool>;
+    let snapshot: CrmSnapshot | undefined;
+    if (customer.status === "unregistered") {
+      tools = {
+        [HANDOFF_TOOL_NAME]: handoffTool,
+        [REGISTER_TOOL_NAME]: createRegisterCustomerTool(this.options.crm, input.contactPhone, outcome),
+      };
+    } else {
+      const scope: CrmScope = { clientId: customer.crmClientId, verified: customer.verified, conversationId: input.conversationId };
+      // A CRM failure propagates: the job retries.
+      snapshot = await this.options.crm.loadSnapshot(scope);
+      tools = {
+        [HANDOFF_TOOL_NAME]: handoffTool,
+        ...(customer.verified ? { [UPDATE_CUSTOMER_TOOL_NAME]: createUpdateCustomerTool(this.options.crm, scope) } : {}),
+        [REGISTER_VESSEL_TOOL_NAME]: createRegisterVesselTool(this.options.crm, scope),
+        [REGISTER_DEAL_TOOL_NAME]: createRegisterDealTool(this.options.crm, scope),
+      };
+    }
 
     let result;
     try {
       result = await generateText({
         model,
-        messages: buildPrompt(input),
+        messages: buildPrompt({ ...input, snapshot }),
         tools,
         maxSteps: MAX_STEPS,
         // BullMQ owns retries (3 attempts with backoff); the SDK must not stack its own.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentConfig, HistoryMessage } from "@fmagentes/messaging";
+import type { CrmSnapshot } from "../src/crm/CrmPort";
 import { buildPrompt, customerContextBlock, MAX_PROMPT_MESSAGE_CHARS, PLATFORM_INSTRUCTIONS } from "../src/buildPrompt";
 
 const AGENT: AgentConfig = {
@@ -20,14 +21,77 @@ describe("customerContextBlock", () => {
     expect(customerContextBlock({ status: "registered", crmClientId: "crm-1", verified: true, name: "Ana Souza" })).toBe("Cliente cadastrado: Ana Souza. Trate o cliente pelo nome.");
   });
 
-  it("omits the name when there is none (CPF link)", () => {
-    expect(customerContextBlock({ status: "registered", crmClientId: "crm-1", verified: false })).toBe("Cliente cadastrado.");
+  it("omits the name when there is none", () => {
+    expect(customerContextBlock({ status: "registered", crmClientId: "crm-1", verified: true })).toBe("Cliente cadastrado.");
   });
 
   it("tells the model to register an unregistered customer", () => {
     expect(customerContextBlock({ status: "unregistered" })).toBe(
-      "Cliente SEM cadastro. Antes de prosseguir com o atendimento, peça nome completo, CPF e e-mail e chame cadastrar_cliente.",
+      "Cliente SEM cadastro. Antes de prosseguir com o atendimento, peça nome completo, CPF ou CNPJ e e-mail e chame cadastrar_cliente.",
     );
+  });
+});
+
+describe("customerContextBlock with a CRM snapshot", () => {
+  const snapshot: CrmSnapshot = {
+    missingClientFields: ["landline", "birthday", "lead_source"],
+    vessels: [{ id: "v-1", kind: "barco_lancha", summary: "Lancha Fibra 6 m" }],
+    openDeals: [{ id: "d-1", pipeline: "vendas", stageLabel: "Lead", title: "Compra de jet ski" }],
+  };
+  const empty: CrmSnapshot = { missingClientFields: [], vessels: [], openDeals: [] };
+  const verified = { status: "registered", crmClientId: "crm-1", verified: true, name: "Ana Souza" } as const;
+  const unverified = { status: "registered", crmClientId: "crm-1", verified: false } as const;
+  const FIRST = "Cliente cadastrado: Ana Souza. Trate o cliente pelo nome.";
+
+  it("shows the verified customer's record, one line each, in order", () => {
+    expect(customerContextBlock(verified, snapshot).split("\n")).toEqual([
+      FIRST,
+      "Campos da ficha ainda vazios: Telefone fixo, Aniversário, Origem do lead.",
+      "Origem do lead vazia: pergunte uma única vez nesta conversa, de forma leve, como o cliente conheceu a Fiuza Marine, e grave com atualizar_cliente.",
+      "Embarcações do cliente:",
+      "- Lancha Fibra 6 m (embarcacao_id: v-1)",
+      "Negócios abertos:",
+      "- Vendas · Lead · Compra de jet ski (negocio_id: d-1)",
+    ]);
+  });
+
+  it("omits empty sections and the lead-source line when it is not missing", () => {
+    expect(customerContextBlock(verified, { ...empty, missingClientFields: ["company"] })).toBe(`${FIRST}\nCampos da ficha ainda vazios: Empresa.`);
+    expect(customerContextBlock(verified, empty)).toBe(FIRST);
+  });
+
+  it("uses the bare first line for a verified customer without a name", () => {
+    expect(customerContextBlock({ ...verified, name: undefined }, empty)).toBe("Cliente cadastrado.");
+  });
+
+  it("keeps an unverified link blind to the record, listing only what the snapshot returned", () => {
+    const first =
+      "Cliente identificado pelo CPF/CNPJ que digitou, sem confirmação. Não cite nenhum dado do cadastro. Você pode registrar embarcações e negócios novos; não atualize a ficha.";
+    expect(customerContextBlock(unverified, snapshot).split("\n")).toEqual([
+      first,
+      "Embarcações do cliente:",
+      "- Lancha Fibra 6 m (embarcacao_id: v-1)",
+      "Negócios abertos:",
+      "- Vendas · Lead · Compra de jet ski (negocio_id: d-1)",
+    ]);
+    expect(customerContextBlock(unverified, empty)).toBe(first);
+  });
+
+  it("gives a registered customer only the first line without a snapshot", () => {
+    expect(customerContextBlock(verified)).toBe(FIRST);
+  });
+});
+
+describe("PLATFORM_INSTRUCTIONS CRM rules", () => {
+  it("carries the CRM rules", () => {
+    for (const line of [
+      "- Quando o cliente mencionar algo que tem lugar no CRM (dados dele, embarcações ou motores que já tem, o que quer comprar, consórcio, peça, conserto), grave com a ferramenta certa, aos poucos, sem avisar nem pedir confirmação.",
+      "- Pergunte só o que for necessário para o próximo passo do atendimento, uma coisa por vez. Se o cliente não souber ou não quiser responder, siga em frente. Nunca faça uma lista de perguntas.",
+      "- Abra o negócio pelo assunto: compra de barco, lancha, jet ski ou motor → vendas; consórcio → consorcios; peça ou acessório → pecas; conserto, revisão ou manutenção → manutencao. Em manutenção, registre antes a embarcação ou motor e informe o embarcacao_id.",
+      "- Nunca pergunte, sugira ou grave valores em dinheiro.",
+    ]) {
+      expect(PLATFORM_INSTRUCTIONS).toContain(line);
+    }
   });
 });
 

@@ -3,7 +3,7 @@ import { MockLanguageModelV1 } from "ai/test";
 import { APICallError } from "ai";
 import type { LanguageModelV1CallOptions } from "ai";
 import { ResponderConfigurationError, type ResponderInput } from "@fmagentes/messaging";
-import { LlmResponder } from "../src/LlmResponder";
+import { LlmResponder, MAX_STEPS } from "../src/LlmResponder";
 import { createFakeCrm } from "./support/fakeCrm";
 
 type GenerateResult = Awaited<ReturnType<MockLanguageModelV1["doGenerate"]>>;
@@ -84,17 +84,49 @@ describe("LlmResponder", () => {
     expect(prompt[2]).toMatchObject({ role: "user" });
   });
 
-  it("offers both tools to an unregistered customer and only handoff to a registered one", async () => {
-    const toolNames = (options: LanguageModelV1CallOptions) =>
-      options.mode.type === "regular" ? (options.mode.tools ?? []).map((t) => t.name).sort() : [];
+  const toolNames = (options: LanguageModelV1CallOptions) =>
+    options.mode.type === "regular" ? (options.mode.tools ?? []).map((t) => t.name).sort() : [];
+  const VERIFIED = { status: "registered", crmClientId: "crm-1", verified: true, name: "Ana" } as const;
 
-    const first = scripted(text("ok"));
-    await responderWith(first.model).responder.generate(INPUT);
-    expect(toolNames(first.calls[0])).toEqual(["cadastrar_cliente", "transferir_para_humano"]);
+  it("offers handoff and registration to an unregistered customer", async () => {
+    const { model, calls } = scripted(text("ok"));
+    await responderWith(model).responder.generate(INPUT);
+    expect(toolNames(calls[0])).toEqual(["cadastrar_cliente", "transferir_para_humano"]);
+  });
 
-    const second = scripted(text("ok"));
-    await responderWith(second.model).responder.generate({ ...INPUT, customer: { status: "registered", crmClientId: "crm-1", verified: true, name: "Ana" } });
-    expect(toolNames(second.calls[0])).toEqual(["transferir_para_humano"]);
+  it("offers handoff, atualizar_cliente, registrar_embarcacao and registrar_negocio to a verified customer", async () => {
+    const { model, calls } = scripted(text("ok"));
+    await responderWith(model).responder.generate({ ...INPUT, customer: VERIFIED });
+    expect(toolNames(calls[0])).toEqual(["atualizar_cliente", "registrar_embarcacao", "registrar_negocio", "transferir_para_humano"]);
+  });
+
+  it("offers no atualizar_cliente on an unverified link", async () => {
+    const { model, calls } = scripted(text("ok"));
+    await responderWith(model).responder.generate({ ...INPUT, customer: { status: "registered", crmClientId: "crm-1", verified: false } });
+    expect(toolNames(calls[0])).toEqual(["registrar_embarcacao", "registrar_negocio", "transferir_para_humano"]);
+  });
+
+  it("loads the snapshot only for registered customers", async () => {
+    const crm = createFakeCrm();
+    const a = scripted(text("ok"));
+    await responderWith(a.model, { crm }).responder.generate(INPUT);
+    expect(crm.loadSnapshot).not.toHaveBeenCalled();
+
+    crm.loadSnapshot.mockResolvedValueOnce({ missingClientFields: ["company"], vessels: [], openDeals: [] });
+    const b = scripted(text("ok"));
+    await responderWith(b.model, { crm }).responder.generate({ ...INPUT, customer: VERIFIED });
+    expect(crm.loadSnapshot).toHaveBeenCalledWith({ clientId: "crm-1", verified: true, conversationId: "conv-1" });
+    expect((b.calls[0].prompt[1] as { content: string }).content).toContain("Campos da ficha ainda vazios: Empresa.");
+  });
+
+  it("lets the model save twice and still reply", async () => {
+    const { model, calls } = scripted(
+      toolCall("atualizar_cliente", { empresa: "Acme" }, "c1"),
+      toolCall("registrar_embarcacao", { tipo: "jet_ski" }, "c2"),
+      text("Anotado!"),
+    );
+    await expect(responderWith(model).responder.generate({ ...INPUT, customer: VERIFIED })).resolves.toEqual({ kind: "reply", text: "Anotado!" });
+    expect(calls).toHaveLength(3);
   });
 
   it("turns a handoff tool call into a handoff with its summary", async () => {
@@ -125,15 +157,13 @@ describe("LlmResponder", () => {
   it("hands off when every step went to tool calls and no text came out (M10)", async () => {
     const invalid = { nome: "X", cpf_cnpj: "111.111.111-11", email: "x@example.com" };
     const { model, calls } = scripted(
-      toolCall("cadastrar_cliente", invalid, "c1"),
-      toolCall("cadastrar_cliente", invalid, "c2"),
-      toolCall("cadastrar_cliente", invalid, "c3"),
+      ...Array.from({ length: MAX_STEPS }, (_, i) => toolCall("cadastrar_cliente", invalid, `c${i}`)),
     );
     const { responder } = responderWith(model);
 
     const result = await responder.generate(INPUT);
 
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(MAX_STEPS);
     expect(result).toEqual({ kind: "handoff", summary: expect.stringMatching(/não concluiu/) });
   });
 
