@@ -4,7 +4,7 @@ import { CrmCpfTakenError, type CrmClient, type CrmPort, type NewCrmClient } fro
 import { phoneMatchSuffixes } from "./phoneMatch";
 import { CAS_ATTEMPTS, createRecordMethods } from "./records";
 
-export { CrmCpfTakenError, CrmNotInScopeError } from "./CrmPort";
+export { CrmCpfTakenError, CrmNotInScopeError, CrmVesselKindMismatchError } from "./CrmPort";
 
 export const AGENT_CREATED_NOTE = "Cadastrado pelo agente WhatsApp";
 

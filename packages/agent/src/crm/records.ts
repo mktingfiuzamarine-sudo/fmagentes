@@ -14,6 +14,7 @@ import {
 import {
   CLIENT_FIELD_IDS,
   CrmNotInScopeError,
+  CrmVesselKindMismatchError,
   type ClientFieldId,
   type CrmPort,
   type CrmScope,
@@ -186,10 +187,11 @@ export function createRecordMethods(
       return { id: (result.data as { id: string }).id };
     },
 
-    async fillVessel(scope, vesselId, fields) {
+    async fillVessel(scope, vesselId, fields, expectedKind) {
       const incoming = pick(fields, VESSEL_FIELD_IDS);
       const { filled, conflicts, row } = await fillRow("vessels", vesselId, VESSEL_COLUMNS, VESSEL_FIELD_LABELS, async (r) => {
         if (!inScope(r, scope)) throw new CrmNotInScopeError();
+        if (r.kind !== expectedKind) throw new CrmVesselKindMismatchError();
         return incoming;
       });
       return { filled, conflicts, kind: row.kind as VesselKind };

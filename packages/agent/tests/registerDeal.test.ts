@@ -29,13 +29,19 @@ describe("registerDeal", () => {
 
   it("appends conflicts by label, never the values", async () => {
     const crm = createFakeCrm();
+    const STORED = "Segredo-Guardado";
+    crm.loadSnapshot.mockResolvedValue({
+      missingClientFields: [],
+      vessels: [],
+      openDeals: [{ id: "deal-1", pipeline: "vendas", stageLabel: "Lead", title: STORED }],
+    });
     crm.findOpenDeal.mockResolvedValue({ id: "deal-1" });
     crm.fillDeal.mockResolvedValue({ filled: [], conflicts: ["brand"] });
-    const answer = await registerDeal(crm, SCOPE, { funil: "vendas", titulo: "x", marca: "Segredo" });
+    const answer = await registerDeal(crm, SCOPE, { funil: "vendas", titulo: "x", marca: "Outra" });
     expect(answer).toBe(
       "Negócio já aberto neste funil foi atualizado (negocio_id: deal-1). Já havia outro valor salvo para: Marca; a equipe vai conferir.",
     );
-    expect(answer).not.toContain("Segredo");
+    expect(answer).not.toContain(STORED);
   });
 
   it("drops fields that do not belong to the pipeline", async () => {

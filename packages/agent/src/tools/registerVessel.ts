@@ -10,7 +10,7 @@ import {
   VESSEL_KIND_IDS,
   type VesselKind,
 } from "../crm/catalog";
-import type { CrmPort, CrmScope, VesselFields } from "../crm/CrmPort";
+import { CrmVesselKindMismatchError, type CrmPort, type CrmScope, type VesselFields } from "../crm/CrmPort";
 import { NOT_FOUND_ANSWER, NOTHING_TO_SAVE_ANSWER, finiteNumber, isUuid, orNotFound, savedAnswer, text } from "./crmAnswers";
 
 export const REGISTER_VESSEL_TOOL_NAME = "registrar_embarcacao";
@@ -41,12 +41,12 @@ const BRANDS: Partial<Record<VesselKind, readonly string[]>> = {
   jet_ski: JET_SKI_BRAND_IDS,
 };
 
-const squash = (value: string) => value.toLowerCase().replace(/[\s-]+/g, "");
+const squash = (value: string) => value.toLowerCase().replace(/[\s_-]+/g, "");
 
 /** Brand id when the text matches the kind's list (case, spaces and hyphens ignored). */
 function matchBrand(kind: VesselKind, raw: string): string | undefined {
   const wanted = squash(raw);
-  return BRANDS[kind]?.find((id) => squash(id.replace(/_/g, "")) === wanted);
+  return BRANDS[kind]?.find((id) => squash(id) === wanted);
 }
 
 /** Only the fields that belong to the chosen kind; the rest is dropped silently. */
@@ -99,9 +99,12 @@ export async function registerVessel(crm: CrmPort, scope: CrmScope, args: Regist
     // fillVessel takes no notes: an unlisted brand is dropped when completing.
     if (Object.keys(fields).length === 0) return NOTHING_TO_SAVE_ANSWER;
     return orNotFound(async () => {
-      const result = await crm.fillVessel(scope, vesselId, fields);
-      if (result.kind !== args.tipo) return OTHER_KIND_ANSWER;
-      return savedAnswer(result, VESSEL_FIELD_LABELS);
+      try {
+        return savedAnswer(await crm.fillVessel(scope, vesselId, fields, args.tipo), VESSEL_FIELD_LABELS);
+      } catch (error) {
+        if (error instanceof CrmVesselKindMismatchError) return OTHER_KIND_ANSWER;
+        throw error;
+      }
     });
   }
 

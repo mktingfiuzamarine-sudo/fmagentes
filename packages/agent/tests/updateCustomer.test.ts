@@ -18,12 +18,15 @@ describe("updateCustomer", () => {
 
   it("names conflicting fields by label, never the stored values", async () => {
     const crm = createFakeCrm();
+    const STORED = "guardado@stored.example";
+    crm.findById.mockResolvedValue({ id: "crm-1", name: "Ana Souza", phone: "11999990000", notes: STORED });
     crm.fillClient.mockResolvedValue({ filled: [], conflicts: ["email"] });
 
     const answer = await updateCustomer(crm, SCOPE, { email: "novo@example.com" });
 
     expect(answer).toBe("Salvo. Já havia outro valor salvo para: E-mail; a equipe vai conferir.");
-    expect(answer).not.toContain("novo@example.com");
+    expect(answer).not.toContain(STORED);
+    expect(answer).not.toContain("Ana Souza");
   });
 
   it("discards an impossible birthday and says so", async () => {

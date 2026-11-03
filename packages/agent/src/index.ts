@@ -13,7 +13,7 @@ export type {
   NewCrmClient,
   VesselFields,
 } from "./crm/CrmPort";
-export { CrmCpfTakenError, CrmNotInScopeError, AGENT_CREATED_NOTE, createSupabaseCrm } from "./crm/supabaseCrm";
+export { CrmCpfTakenError, CrmNotInScopeError, CrmVesselKindMismatchError, AGENT_CREATED_NOTE, createSupabaseCrm } from "./crm/supabaseCrm";
 export { phoneMatchSuffixes } from "./crm/phoneMatch";
 export { HANDOFF_TOOL_NAME, handoffTool } from "./tools/handoff";
 export {

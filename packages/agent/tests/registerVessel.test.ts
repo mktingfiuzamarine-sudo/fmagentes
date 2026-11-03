@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { registerVessel } from "../src/tools/registerVessel";
-import { CrmNotInScopeError, type CrmScope } from "../src/crm/CrmPort";
+import { CrmNotInScopeError, CrmVesselKindMismatchError, type CrmScope } from "../src/crm/CrmPort";
 import { createFakeCrm } from "./support/fakeCrm";
 
 const SCOPE: CrmScope = { clientId: "crm-1", verified: true, conversationId: "conv-1" };
@@ -40,6 +40,28 @@ describe("registerVessel", () => {
     expect(crm.createVessel).toHaveBeenCalledWith(SCOPE, "jet_ski", { brand: "sea_doo", model: "GTI", year: 2020 });
   });
 
+  it("matches an id-style brand such as sea_doo", async () => {
+    const crm = createFakeCrm();
+    await registerVessel(crm, SCOPE, { tipo: "jet_ski", marca: "sea_doo" });
+    expect(crm.createVessel).toHaveBeenCalledWith(SCOPE, "jet_ski", { brand: "sea_doo" });
+  });
+
+  it("never reveals stored data in its answers", async () => {
+    const crm = createFakeCrm();
+    const STORED = "Mercury-SEGREDO-999";
+    crm.loadSnapshot.mockResolvedValue({
+      missingClientFields: [],
+      vessels: [{ id: VESSEL_ID, kind: "motor_popa", summary: STORED }],
+      openDeals: [],
+    });
+    crm.fillVessel.mockResolvedValue({ filled: [], conflicts: ["brand", "horsepower"], kind: "motor_popa" });
+    const answers = [
+      await registerVessel(crm, SCOPE, { tipo: "motor_popa", embarcacao_id: VESSEL_ID, marca: "Yamaha", potencia_hp: 90 }),
+      await registerVessel(crm, SCOPE, { tipo: "motor_popa", marca: "Yamaha" }),
+    ];
+    for (const answer of answers) expect(answer).not.toContain(STORED);
+  });
+
   it("matches the brand ignoring case, spaces and hyphens", async () => {
     const crm = createFakeCrm();
     await registerVessel(crm, SCOPE, { tipo: "motor_popa", marca: " MERCURY ", potencia_hp: 150 });
@@ -68,7 +90,7 @@ describe("registerVessel", () => {
       modelo: "GTI",
     });
 
-    expect(crm.fillVessel).toHaveBeenCalledWith(SCOPE, VESSEL_ID, { model: "GTI" });
+    expect(crm.fillVessel).toHaveBeenCalledWith(SCOPE, VESSEL_ID, { model: "GTI" }, "jet_ski");
     expect(crm.createVessel).not.toHaveBeenCalled();
     expect(answer).toBe("Salvo.");
   });
@@ -91,7 +113,7 @@ describe("registerVessel", () => {
 
   it("refuses a vessel of another kind", async () => {
     const crm = createFakeCrm();
-    crm.fillVessel.mockResolvedValue({ filled: [], conflicts: [], kind: "barco_lancha" });
+    crm.fillVessel.mockRejectedValue(new CrmVesselKindMismatchError());
     expect(await registerVessel(crm, SCOPE, { tipo: "jet_ski", embarcacao_id: VESSEL_ID, modelo: "GTI" })).toBe(
       "Erro: essa embarcação é de outro tipo. Registre uma nova.",
     );

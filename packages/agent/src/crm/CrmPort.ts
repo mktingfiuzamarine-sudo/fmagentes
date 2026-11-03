@@ -72,8 +72,11 @@ export interface CrmPort {
   fillClient(scope: CrmScope, fields: ClientFields): Promise<FillResult>;
   /** `notes` is accepted on creation only (a free-text line, e.g. an unlisted brand). */
   createVessel(scope: CrmScope, kind: VesselKind, fields: VesselFields & { notes?: string }): Promise<{ id: string }>;
-  /** Throws CrmNotInScopeError when the vessel is missing or outside the scope. */
-  fillVessel(scope: CrmScope, vesselId: string, fields: VesselFields): Promise<FillResult & { kind: VesselKind }>;
+  /**
+   * Throws CrmNotInScopeError when the vessel is missing or outside the scope (checked first), then
+   * CrmVesselKindMismatchError, writing nothing, when the vessel is not of `expectedKind`.
+   */
+  fillVessel(scope: CrmScope, vesselId: string, fields: VesselFields, expectedKind: VesselKind): Promise<FillResult & { kind: VesselKind }>;
   /** Most recently updated deal of that pipeline in scope that is not in its last stage. */
   findOpenDeal(scope: CrmScope, pipeline: PipelineId): Promise<{ id: string } | null>;
   /** Always in the pipeline's first stage. A `vessel_id` outside the scope throws CrmNotInScopeError. */
@@ -86,6 +89,14 @@ export class CrmCpfTakenError extends Error {
   constructor() {
     super("CPF already registered in the CRM");
     this.name = "CrmCpfTakenError";
+  }
+}
+
+/** The vessel in scope is of another kind than the caller expected; nothing was written. */
+export class CrmVesselKindMismatchError extends Error {
+  constructor() {
+    super("CRM vessel is of another kind");
+    this.name = "CrmVesselKindMismatchError";
   }
 }
 

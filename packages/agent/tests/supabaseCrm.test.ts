@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { CrmNotInScopeError, type CrmScope } from "../src/crm/CrmPort";
+import { CrmNotInScopeError, CrmVesselKindMismatchError, type CrmScope } from "../src/crm/CrmPort";
 import { AGENT_CREATED_NOTE, CrmCpfTakenError, createSupabaseCrm } from "../src/crm/supabaseCrm";
 import { createSupabaseMock, type Handler, type TableCall } from "./support/supabaseMock";
 
@@ -398,7 +398,7 @@ describe("CRM records", () => {
         const t = rowTable([{ id: "v-secret", kind: "motor_popa", brand: "mercury", notes: "segredo", updated_at: "t1", ...row }]);
         const { crm } = crmWithTables({ vessels: t.handler });
 
-        const error = await crm.fillVessel(scope, "v-secret", { horsepower: 150 }).catch((e: unknown) => e);
+        const error = await crm.fillVessel(scope, "v-secret", { horsepower: 150 }, "motor_popa").catch((e: unknown) => e);
         expect(error).toBeInstanceOf(CrmNotInScopeError);
         expect((error as Error).name).toBe("CrmNotInScopeError");
         expect((error as Error).message).toBe("CRM record not in scope");
@@ -418,7 +418,7 @@ describe("CRM records", () => {
 
     it("treats a missing record like one outside the scope", async () => {
       const { crm } = crmWithTables({ vessels: () => ({ data: null, error: null }), deals: () => ({ data: null, error: null }) });
-      await expect(crm.fillVessel(VERIFIED, "nope", { year: 2020 })).rejects.toBeInstanceOf(CrmNotInScopeError);
+      await expect(crm.fillVessel(VERIFIED, "nope", { year: 2020 }, "jet_ski")).rejects.toBeInstanceOf(CrmNotInScopeError);
       await expect(crm.fillDeal(VERIFIED, "nope", { model: "x" })).rejects.toBeInstanceOf(CrmNotInScopeError);
     });
 
@@ -437,7 +437,7 @@ describe("CRM records", () => {
       ]);
       const { crm } = crmWithTables({ vessels: t.handler });
 
-      await expect(crm.fillVessel(UNVERIFIED, "v1", { horsepower: 150, brand: "mercury" })).resolves.toEqual({
+      await expect(crm.fillVessel(UNVERIFIED, "v1", { horsepower: 150, brand: "mercury" }, "motor_popa")).resolves.toEqual({
         filled: ["horsepower"],
         conflicts: [],
         kind: "motor_popa",
@@ -452,8 +452,25 @@ describe("CRM records", () => {
     it("fillVessel drops keys that are not vessel fields", async () => {
       const t = rowTable([{ id: "v1", client_id: "crm-1", created_by_conversation: null, kind: "jet_ski", notes: null, updated_at: "t1" }]);
       const { crm } = crmWithTables({ vessels: t.handler });
-      await crm.fillVessel(VERIFIED, "v1", { client_id: "crm-2", notes: "x", model: "GTI" } as never);
+      await crm.fillVessel(VERIFIED, "v1", { client_id: "crm-2", notes: "x", model: "GTI" } as never, "jet_ski");
       expect(t.updates.map(updateOf)).toEqual([{ model: "GTI" }]);
+    });
+
+    it("fillVessel writes nothing when the vessel is of another kind", async () => {
+      const t = rowTable([
+        { id: "v1", client_id: "crm-1", created_by_conversation: null, kind: "motor_popa", brand: null, notes: null, updated_at: "t1" },
+      ]);
+      const { crm } = crmWithTables({ vessels: t.handler });
+      const error = await crm.fillVessel(VERIFIED, "v1", { brand: "yamaha" }, "jet_ski").catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(CrmVesselKindMismatchError);
+      expect((error as Error).message).not.toContain("motor_popa");
+      expect(t.updates).toEqual([]);
+    });
+
+    it("fillVessel reports out-of-scope, not the kind mismatch, for a foreign vessel", async () => {
+      const t = rowTable([{ id: "v1", client_id: "crm-2", created_by_conversation: null, kind: "motor_popa", updated_at: "t1" }]);
+      const { crm } = crmWithTables({ vessels: t.handler });
+      await expect(crm.fillVessel(VERIFIED, "v1", { brand: "yamaha" }, "jet_ski")).rejects.toBeInstanceOf(CrmNotInScopeError);
     });
   });
 
