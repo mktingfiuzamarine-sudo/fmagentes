@@ -522,7 +522,14 @@ describe("CRM records", () => {
       await crm.createVessel(UNVERIFIED, "motor_popa", { brand: "mercury", horsepower: 150 });
 
       expect(inserts).toEqual([
-        { user_id: AGENT_USER, client_id: "crm-1", kind: "jet_ski", brand: "sea_doo", created_by_conversation: null },
+        {
+          user_id: AGENT_USER,
+          client_id: "crm-1",
+          kind: "jet_ski",
+          brand: "sea_doo",
+          notes: "x",
+          created_by_conversation: null,
+        },
         {
           user_id: AGENT_USER,
           client_id: "crm-1",

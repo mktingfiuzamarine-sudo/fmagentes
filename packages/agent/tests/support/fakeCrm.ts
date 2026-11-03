@@ -26,7 +26,7 @@ export function createFakeCrm(seed: { byCpf?: CrmClient | null; created?: CrmCli
       async (_scope: CrmScope): Promise<CrmSnapshot> => ({ missingClientFields: [], vessels: [], openDeals: [] }),
     ),
     fillClient: vi.fn(async (_scope: CrmScope, _fields: ClientFields): Promise<FillResult> => ({ filled: [], conflicts: [] })),
-    createVessel: vi.fn(async (_scope: CrmScope, _kind: VesselKind, _fields: VesselFields) => ({ id: "vessel-new" })),
+    createVessel: vi.fn(async (_scope: CrmScope, _kind: VesselKind, _fields: VesselFields & { notes?: string }) => ({ id: "vessel-new" })),
     fillVessel: vi.fn(
       async (_scope: CrmScope, _vesselId: string, _fields: VesselFields): Promise<FillResult & { kind: VesselKind }> => ({
         filled: [],

@@ -22,4 +22,7 @@ export {
   registerCustomer,
   type RegistrationOutcome,
 } from "./tools/registerCustomer";
+export { UPDATE_CUSTOMER_TOOL_NAME, createUpdateCustomerTool, updateCustomer, type UpdateCustomerArgs } from "./tools/updateCustomer";
+export { REGISTER_VESSEL_TOOL_NAME, createRegisterVesselTool, registerVessel, type RegisterVesselArgs } from "./tools/registerVessel";
+export { REGISTER_DEAL_TOOL_NAME, createRegisterDealTool, registerDeal, type RegisterDealArgs } from "./tools/registerDeal";
 export { LlmResponder, DEFAULT_LLM_TIMEOUT_MS, MAX_STEPS, type LlmResponderOptions } from "./LlmResponder";

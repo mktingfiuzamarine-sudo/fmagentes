@@ -177,6 +177,7 @@ export function createRecordMethods(
           client_id: scope.clientId,
           kind,
           ...pick(fields, VESSEL_FIELD_IDS),
+          ...(typeof fields.notes === "string" && fields.notes ? { notes: fields.notes } : {}),
           created_by_conversation: conversationStamp(scope),
         })
         .select("id")

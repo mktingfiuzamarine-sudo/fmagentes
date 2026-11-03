@@ -70,7 +70,8 @@ export interface CrmPort {
    * Throws CrmNotInScopeError unless `scope.verified`.
    */
   fillClient(scope: CrmScope, fields: ClientFields): Promise<FillResult>;
-  createVessel(scope: CrmScope, kind: VesselKind, fields: VesselFields): Promise<{ id: string }>;
+  /** `notes` is accepted on creation only (a free-text line, e.g. an unlisted brand). */
+  createVessel(scope: CrmScope, kind: VesselKind, fields: VesselFields & { notes?: string }): Promise<{ id: string }>;
   /** Throws CrmNotInScopeError when the vessel is missing or outside the scope. */
   fillVessel(scope: CrmScope, vesselId: string, fields: VesselFields): Promise<FillResult & { kind: VesselKind }>;
   /** Most recently updated deal of that pipeline in scope that is not in its last stage. */
