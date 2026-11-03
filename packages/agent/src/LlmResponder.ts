@@ -17,8 +17,8 @@ import { createRegisterVesselTool, REGISTER_VESSEL_TOOL_NAME } from "./tools/reg
 import { createUpdateCustomerTool, UPDATE_CUSTOMER_TOOL_NAME } from "./tools/updateCustomer";
 
 export const DEFAULT_LLM_TIMEOUT_MS = 45_000;
-/** Tool call → tool result → final text. */
-export const MAX_STEPS = 3;
+/** Room for several saves (one tool call each) plus the final text. */
+export const MAX_STEPS = 6;
 
 const STEPS_EXHAUSTED_SUMMARY = "O bot não concluiu a resposta (usou todas as etapas em ferramentas). Veja o histórico.";
 
