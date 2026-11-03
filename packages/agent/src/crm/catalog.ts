@@ -130,3 +130,34 @@ export const AGENT_DEAL_FIELDS = {
 } as const satisfies Record<PipelineId, readonly string[]>;
 
 export type AgentDealFieldId = (typeof AGENT_DEAL_FIELDS)[PipelineId][number];
+
+export const VESSEL_KIND_LABELS: Record<VesselKind, string> = {
+  barco_lancha: "Barco/Lancha",
+  jet_ski: "Jet Ski",
+  motor_popa: "Motor de Popa",
+};
+
+export const HULL_TYPE_LABELS: Record<(typeof HULL_TYPE_IDS)[number], string> = {
+  aluminio_mono: "Alumínio mono casco",
+  fibra_mono: "Fibra mono casco",
+  catamara: "Catamarã",
+  outro: "Outro",
+};
+
+export const OUTBOARD_BRAND_LABELS: Record<(typeof OUTBOARD_BRAND_IDS)[number], string> = {
+  yamaha: "Yamaha",
+  evinrude: "Evinrude",
+  johnson: "Johnson",
+  mercury: "Mercury",
+  suzuki: "Suzuki",
+  hidea: "Hidea",
+  tohatsu: "Tohatsu",
+  honda: "Honda",
+};
+
+export const JET_SKI_BRAND_LABELS: Record<(typeof JET_SKI_BRAND_IDS)[number], string> = {
+  sea_doo: "Sea-Doo",
+  yamaha: "Yamaha",
+  kawasaki: "Kawasaki",
+  honda: "Honda",
+};

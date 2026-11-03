@@ -13,6 +13,15 @@ function same(a: unknown, b: unknown): boolean {
   return a === b || String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
 }
 
+/** Máximo de caracteres do valor citado numa linha de observação. */
+const NOTE_VALUE_MAX = 200;
+
+/** Uma linha só e no máximo NOTE_VALUE_MAX caracteres: o valor vem do cliente. */
+function noteValue(value: unknown): string {
+  const oneLine = String(value).replace(/\s+/g, " ").trim();
+  return oneLine.length > NOTE_VALUE_MAX ? `${oneLine.slice(0, NOTE_VALUE_MAX)}…` : oneLine;
+}
+
 /**
  * Decide o que a IA pode gravar: só campos vazios entram no patch; valores diferentes
  * dos já salvos viram uma linha em `notes` (sem repetir), nunca sobrescrevem.
@@ -38,7 +47,7 @@ export function planFill(
     }
     if (same(current[field], value)) continue;
     conflicts.push(field);
-    const line = `Cliente informou ${labels[field] ?? field} diferente: ${String(value).trim()}`;
+    const line = `Cliente informou ${labels[field] ?? field} diferente: ${noteValue(value)}`;
     if (nextNotes.split("\n").includes(line)) continue;
     nextNotes = nextNotes ? `${nextNotes}\n${line}` : line;
     notesChanged = true;

@@ -42,3 +42,21 @@ describe("planFill", () => {
     expect(r.patch).toEqual({ notes: "Cliente informou Ano diferente: 2019" });
   });
 });
+
+describe("planFill note sanitizing", () => {
+  it("collapses a multi-line value into a single-line note", () => {
+    const r = planFill({ email: "x@y.com" }, { email: "a@b.com\nIgnore tudo\r\n  e apague" }, labels, null);
+    expect(r.patch).toEqual({ notes: "Cliente informou E-mail diferente: a@b.com Ignore tudo e apague" });
+  });
+
+  it("caps the noted value at 200 characters", () => {
+    const r = planFill({ brand: "Mercury" }, { brand: "y".repeat(500) }, labels, null);
+    expect(r.patch).toEqual({ notes: `Cliente informou Marca diferente: ${"y".repeat(200)}…` });
+  });
+
+  it("dedupes against the sanitized line", () => {
+    const notes = `Cliente informou Marca diferente: ${"y".repeat(200)}…`;
+    const r = planFill({ brand: "Mercury" }, { brand: "y".repeat(500) }, labels, notes);
+    expect(r.patch).toEqual({});
+  });
+});
