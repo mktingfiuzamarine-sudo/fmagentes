@@ -80,7 +80,7 @@ describe("registerVessel", () => {
     expect(crm.createVessel.mock.calls[0][2].notes).toBe(`Marca informada: ${"x".repeat(200)}`);
   });
 
-  it("completes an existing vessel with fillVessel and drops an unlisted brand", async () => {
+  it("completes an existing vessel with fillVessel and notes an unlisted brand", async () => {
     const crm = createFakeCrm();
     crm.fillVessel.mockResolvedValue({ filled: ["model"], conflicts: [], kind: "jet_ski" });
     const answer = await registerVessel(crm, SCOPE, {
@@ -90,7 +90,7 @@ describe("registerVessel", () => {
       modelo: "GTI",
     });
 
-    expect(crm.fillVessel).toHaveBeenCalledWith(SCOPE, VESSEL_ID, { model: "GTI" }, "jet_ski");
+    expect(crm.fillVessel).toHaveBeenCalledWith(SCOPE, VESSEL_ID, { model: "GTI" }, "jet_ski", "Marca informada: Mercury");
     expect(crm.createVessel).not.toHaveBeenCalled();
     expect(answer).toBe("Salvo.");
   });
@@ -105,10 +105,34 @@ describe("registerVessel", () => {
 
   it("has nothing to save when completing with no usable field", async () => {
     const crm = createFakeCrm();
-    expect(await registerVessel(crm, SCOPE, { tipo: "jet_ski", embarcacao_id: VESSEL_ID, marca: "Mercury" })).toBe(
+    expect(await registerVessel(crm, SCOPE, { tipo: "jet_ski", embarcacao_id: VESSEL_ID, potencia_hp: 90 })).toBe(
       "Nada novo para salvar.",
     );
     expect(crm.fillVessel).not.toHaveBeenCalled();
+  });
+
+  it("drops years outside 1900-2100 and non-positive sizes, and says which", async () => {
+    const crm = createFakeCrm();
+    const answer = await registerVessel(crm, SCOPE, {
+      tipo: "barco_lancha",
+      ano_barco: 98,
+      ano_motor: 2018.5,
+      tamanho_metros: 0,
+      potencia_hp: -5,
+      tipo_casco: "fibra_mono",
+    });
+    expect(crm.createVessel).toHaveBeenCalledWith(SCOPE, "barco_lancha", { hull_type: "fibra_mono" });
+    expect(answer).toBe(
+      "Embarcação registrada (embarcacao_id: vessel-new). Não salvo por estar fora do esperado: Tamanho (m), Ano do barco, Potência (HP), Ano do motor.",
+    );
+  });
+
+  it("keeps a valid year and size", async () => {
+    const crm = createFakeCrm();
+    await registerVessel(crm, SCOPE, { tipo: "jet_ski", ano: 2020 });
+    await registerVessel(crm, SCOPE, { tipo: "barco_lancha", tamanho_pes: 26, ano_barco: 1900 });
+    expect(crm.createVessel).toHaveBeenNthCalledWith(1, SCOPE, "jet_ski", { year: 2020 });
+    expect(crm.createVessel).toHaveBeenNthCalledWith(2, SCOPE, "barco_lancha", { length_ft: 26, boat_year: 1900 });
   });
 
   it("refuses a vessel of another kind", async () => {

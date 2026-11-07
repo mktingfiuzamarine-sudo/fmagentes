@@ -20,11 +20,33 @@ describe("registerDeal", () => {
   it("completes the open deal instead of creating another", async () => {
     const crm = createFakeCrm();
     crm.findOpenDeal.mockResolvedValue({ id: "deal-1" });
+    crm.fillDeal.mockResolvedValue({ filled: ["brand"], conflicts: [] });
     const answer = await registerDeal(crm, SCOPE, { funil: "vendas", titulo: "Compra", marca: "Yamaha" });
 
     expect(crm.fillDeal).toHaveBeenCalledWith(SCOPE, "deal-1", { brand: "Yamaha" });
     expect(crm.createDeal).not.toHaveBeenCalled();
     expect(answer).toBe("Negócio já aberto neste funil foi atualizado (negocio_id: deal-1).");
+  });
+
+  it("says nothing new was saved when the open deal already had it", async () => {
+    const crm = createFakeCrm();
+    crm.findOpenDeal.mockResolvedValue({ id: "deal-1" });
+    const answer = await registerDeal(crm, SCOPE, { funil: "vendas", titulo: "Compra", marca: "Yamaha" });
+    expect(answer).toBe("Negócio já aberto neste funil (negocio_id: deal-1). Nada novo para salvar.");
+  });
+
+  it("drops a year outside 1900-2100 and says so", async () => {
+    const crm = createFakeCrm();
+    const answer = await registerDeal(crm, SCOPE, { funil: "vendas", titulo: "Lancha", ano: 98, modelo: "X" });
+    expect(crm.createDeal).toHaveBeenCalledWith(SCOPE, "vendas", "Lancha", { model: "X" });
+    expect(answer).toBe("Negócio aberto (negocio_id: deal-new). Não salvo por estar fora do esperado: Ano.");
+  });
+
+  it("caps the title at 120 characters on one line", async () => {
+    const crm = createFakeCrm();
+    await registerDeal(crm, SCOPE, { funil: "pecas", titulo: "a\n" + "b".repeat(200) });
+    const title = crm.createDeal.mock.calls[0][2];
+    expect(title).toBe(("a " + "b".repeat(200)).slice(0, 120));
   });
 
   it("appends conflicts by label, never the values", async () => {

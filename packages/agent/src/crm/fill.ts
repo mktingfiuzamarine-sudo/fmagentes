@@ -25,12 +25,14 @@ function noteValue(value: unknown): string {
 /**
  * Decide o que a IA pode gravar: só campos vazios entram no patch; valores diferentes
  * dos já salvos viram uma linha em `notes` (sem repetir), nunca sobrescrevem.
+ * `extraLines` entram em `notes` do mesmo jeito (uma linha, sem repetir).
  */
 export function planFill(
   current: Record<string, unknown>,
   incoming: Record<string, unknown>,
   labels: Record<string, string>,
   notes: string | null,
+  extraLines: readonly string[] = [],
 ): FillPlan {
   const patch: Record<string, unknown> = {};
   const filled: string[] = [];
@@ -49,6 +51,13 @@ export function planFill(
     conflicts.push(field);
     const line = `Cliente informou ${labels[field] ?? field} diferente: ${noteValue(value)}`;
     if (nextNotes.split("\n").includes(line)) continue;
+    nextNotes = nextNotes ? `${nextNotes}\n${line}` : line;
+    notesChanged = true;
+  }
+
+  for (const raw of extraLines) {
+    const line = noteValue(raw);
+    if (!line || nextNotes.split("\n").includes(line)) continue;
     nextNotes = nextNotes ? `${nextNotes}\n${line}` : line;
     notesChanged = true;
   }

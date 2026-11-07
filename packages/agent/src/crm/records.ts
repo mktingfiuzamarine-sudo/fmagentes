@@ -52,6 +52,13 @@ function pick(fields: object, allowed: readonly string[]): Row {
 
 const blank = (v: unknown) => v === null || v === undefined || (typeof v === "string" && v.trim() === "");
 
+/** Saved vs given value: numbers by value (numeric columns may come back as text), text ignoring case and spaces. */
+function sameValue(saved: unknown, given: unknown): boolean {
+  if (blank(saved)) return false;
+  if (typeof given === "number") return Number(saved) === given;
+  return String(saved).trim().toLowerCase() === String(given).trim().toLowerCase();
+}
+
 function inScope(row: Row | null, scope: CrmScope): row is Row {
   return (
     !!row &&
@@ -79,16 +86,23 @@ export function createRecordMethods(
     id: string,
     columns: string,
     labels: Record<string, string>,
-    prepare: (row: Row | null) => Promise<Row>,
+    prepare: (row: Row | null) => Promise<{ incoming: Row; noteLines?: string[] }>,
   ): Promise<FillResult & { row: Row }> {
     for (let attempt = 0; attempt < CAS_ATTEMPTS; attempt++) {
       const read = await supabase.from(table).select(columns).eq("id", id).maybeSingle();
       throwIfError(read.error);
       const row = read.data as Row | null;
-      const incoming = await prepare(row);
-      const current = row as Row;
+      const { incoming, noteLines } = await prepare(row);
+      if (!row) throw new CrmNotInScopeError();
+      const current = row;
 
-      const { patch, filled, conflicts } = planFill(current, incoming, labels, (current.notes as string | null) ?? null);
+      const { patch, filled, conflicts } = planFill(
+        current,
+        incoming,
+        labels,
+        (current.notes as string | null) ?? null,
+        noteLines,
+      );
       if (Object.keys(patch).length === 0) return { filled, conflicts, row: current };
 
       const write = await supabase
@@ -165,19 +179,38 @@ export function createRecordMethods(
       const incoming = pick(fields, CLIENT_FIELD_IDS);
       const { filled, conflicts } = await fillRow("clients", scope.clientId, CLIENT_COLUMNS, CLIENT_FIELD_LABELS, async (row) => {
         if (!row) throw new CrmNotInScopeError();
-        return incoming;
+        // The CRM only accepts referred_by with lead_source = indicacao: otherwise keep the name in notes.
+        const referredBy = incoming.referred_by;
+        const origin = blank(row.lead_source) ? incoming.lead_source : row.lead_source;
+        if (blank(referredBy) || origin === "indicacao") return { incoming };
+        const { referred_by: _dropped, ...rest } = incoming;
+        return { incoming: rest, noteLines: [`Quem indicou: ${String(referredBy)}`] };
       });
       return { filled, conflicts };
     },
 
     async createVessel(scope, kind, fields) {
+      const given = pick(fields, VESSEL_FIELD_IDS);
+      const givenKeys = Object.keys(given).filter((key) => !blank(given[key]));
+      if (givenKeys.length > 0) {
+        // A retried job (or the customer repeating themselves) must not register the same vessel twice.
+        const existing = await scoped("vessels", ["id", ...VESSEL_FIELD_IDS].join(", "), scope)
+          .eq("kind", kind)
+          .limit(SNAPSHOT_LIMIT);
+        throwIfError(existing.error);
+        const match = ((existing.data as unknown as Row[] | null) ?? []).find((row) =>
+          givenKeys.every((key) => sameValue(row[key], given[key])),
+        );
+        if (match) return { id: String(match.id) };
+      }
+
       const result = await supabase
         .from("vessels")
         .insert({
           user_id: agentUserId,
           client_id: scope.clientId,
           kind,
-          ...pick(fields, VESSEL_FIELD_IDS),
+          ...given,
           ...(typeof fields.notes === "string" && fields.notes ? { notes: fields.notes } : {}),
           created_by_conversation: conversationStamp(scope),
         })
@@ -187,12 +220,12 @@ export function createRecordMethods(
       return { id: (result.data as { id: string }).id };
     },
 
-    async fillVessel(scope, vesselId, fields, expectedKind) {
+    async fillVessel(scope, vesselId, fields, expectedKind, noteLine) {
       const incoming = pick(fields, VESSEL_FIELD_IDS);
       const { filled, conflicts, row } = await fillRow("vessels", vesselId, VESSEL_COLUMNS, VESSEL_FIELD_LABELS, async (r) => {
         if (!inScope(r, scope)) throw new CrmNotInScopeError();
         if (r.kind !== expectedKind) throw new CrmVesselKindMismatchError();
-        return incoming;
+        return { incoming, noteLines: noteLine ? [noteLine] : [] };
       });
       return { filled, conflicts, kind: row.kind as VesselKind };
     },
@@ -229,7 +262,7 @@ export function createRecordMethods(
         const allowed = AGENT_DEAL_FIELDS[row.pipeline as PipelineId] ?? [];
         const incoming = pick(fields, allowed);
         await assertVesselInScope(scope, incoming.vessel_id);
-        return incoming;
+        return { incoming };
       });
       return { filled, conflicts };
     },

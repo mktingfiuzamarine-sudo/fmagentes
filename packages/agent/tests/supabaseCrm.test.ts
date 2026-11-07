@@ -268,6 +268,13 @@ describe("CRM records", () => {
         ],
       });
       expect(recorded.clients).toContainEqual({ op: "eq", args: ["id", "crm-1"] });
+      expect(recorded.deals).toContainEqual({
+        op: "or",
+        args: [
+          "and(pipeline.eq.vendas,stage.neq.fechado),and(pipeline.eq.consorcios,stage.neq.encerrado)," +
+            "and(pipeline.eq.pecas,stage.neq.entregue),and(pipeline.eq.manutencao,stage.neq.pago)",
+        ],
+      });
       for (const table of ["vessels", "deals"]) {
         expect(recorded[table]).toContainEqual({ op: "eq", args: ["client_id", "crm-1"] });
         expect(recorded[table]).toContainEqual({ op: "limit", args: [20] });
@@ -370,6 +377,37 @@ describe("CRM records", () => {
       expect(supabase.from).not.toHaveBeenCalled();
     });
 
+    it("notes who referred instead of writing it when the origin is not Indicação", async () => {
+      const t = rowTable([{ ...CLIENT_ROW, lead_source: "instagram" }]);
+      const { crm } = crmWithTables({ clients: t.handler });
+
+      await expect(crm.fillClient(VERIFIED, { referred_by: "João", email: "a@b.com" })).resolves.toEqual({
+        filled: ["email"],
+        conflicts: [],
+      });
+      expect(t.updates.map(updateOf)).toEqual([{ email: "a@b.com", notes: "Quem indicou: João" }]);
+    });
+
+    it("writes who referred when the origin is Indicação, saved or in the same call", async () => {
+      const saved = rowTable([{ ...CLIENT_ROW, lead_source: "indicacao" }]);
+      await crmWithTables({ clients: saved.handler }).crm.fillClient(VERIFIED, { referred_by: "João" });
+      expect(saved.updates.map(updateOf)).toEqual([{ referred_by: "João" }]);
+
+      const sameCall = rowTable([{ ...CLIENT_ROW, lead_source: null }]);
+      await crmWithTables({ clients: sameCall.handler }).crm.fillClient(VERIFIED, {
+        lead_source: "indicacao",
+        referred_by: "João",
+      });
+      expect(sameCall.updates.map(updateOf)).toEqual([{ lead_source: "indicacao", referred_by: "João" }]);
+    });
+
+    it("notes who referred when no origin is known", async () => {
+      const t = rowTable([{ ...CLIENT_ROW, lead_source: null }]);
+      const { crm } = crmWithTables({ clients: t.handler });
+      await crm.fillClient(VERIFIED, { referred_by: "João" });
+      expect(t.updates.map(updateOf)).toEqual([{ notes: "Quem indicou: João" }]);
+    });
+
     it("drops keys that are not client fields", async () => {
       const t = rowTable([CLIENT_ROW]);
       const { crm } = crmWithTables({ clients: t.handler });
@@ -447,6 +485,13 @@ describe("CRM records", () => {
         { op: "eq", args: ["id", "v1"] },
         { op: "eq", args: ["updated_at", "t1"] },
       ]);
+    });
+
+    it("fillVessel appends a note line when given one", async () => {
+      const t = rowTable([{ id: "v1", client_id: "crm-1", created_by_conversation: null, kind: "jet_ski", notes: null, updated_at: "t1" }]);
+      const { crm } = crmWithTables({ vessels: t.handler });
+      await crm.fillVessel(VERIFIED, "v1", {}, "jet_ski", "Marca informada: Zeta");
+      expect(t.updates.map(updateOf)).toEqual([{ notes: "Marca informada: Zeta" }]);
     });
 
     it("fillVessel drops keys that are not vessel fields", async () => {
@@ -528,7 +573,9 @@ describe("CRM records", () => {
       const inserts: unknown[] = [];
       const { crm } = crmWithTables({
         vessels: (calls) => {
-          inserts.push(calls.find((c) => c.op === "insert")!.args[0]);
+          const insert = calls.find((c) => c.op === "insert");
+          if (!insert) return { data: [], error: null };
+          inserts.push(insert.args[0]);
           return { data: { id: "v-new" }, error: null };
         },
       });
@@ -556,6 +603,47 @@ describe("CRM records", () => {
           created_by_conversation: "conv-1",
         },
       ]);
+    });
+  });
+
+  describe("createVessel dedupe", () => {
+    function vesselsWith(existing: unknown[]) {
+      const recorded: TableCall[] = [];
+      const { crm } = crmWithTables({
+        vessels: (calls) => {
+          recorded.push(calls);
+          return calls.some((c) => c.op === "insert")
+            ? { data: { id: "v-new" }, error: null }
+            : { data: existing, error: null };
+        },
+      });
+      return { crm, recorded, inserted: () => recorded.some((calls) => calls.some((c) => c.op === "insert")) };
+    }
+
+    it("reuses a vessel in scope of the same kind whose saved data match (job retry)", async () => {
+      const { crm, recorded, inserted } = vesselsWith([
+        { id: "v1", kind: "motor_popa", brand: "mercury", horsepower: 150, model: null, year: null },
+      ]);
+      await expect(crm.createVessel(UNVERIFIED, "motor_popa", { brand: "mercury", horsepower: 150 })).resolves.toEqual({
+        id: "v1",
+      });
+      expect(inserted()).toBe(false);
+      expect(recorded[0]).toContainEqual({ op: "eq", args: ["kind", "motor_popa"] });
+      expect(recorded[0]).toContainEqual({ op: "eq", args: ["created_by_conversation", "conv-1"] });
+    });
+
+    it("creates a new vessel when a saved field differs", async () => {
+      const { crm, inserted } = vesselsWith([{ id: "v1", kind: "motor_popa", brand: "mercury", horsepower: 90 }]);
+      await expect(crm.createVessel(VERIFIED, "motor_popa", { brand: "mercury", horsepower: 150 })).resolves.toEqual({
+        id: "v-new",
+      });
+      expect(inserted()).toBe(true);
+    });
+
+    it("always creates when no field was given", async () => {
+      const { crm, inserted } = vesselsWith([{ id: "v1", kind: "jet_ski" }]);
+      await expect(crm.createVessel(VERIFIED, "jet_ski", {})).resolves.toEqual({ id: "v-new" });
+      expect(inserted()).toBe(true);
     });
   });
 

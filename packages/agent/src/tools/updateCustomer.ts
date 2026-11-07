@@ -2,7 +2,10 @@ import { tool } from "ai";
 import { z } from "zod";
 import { CLIENT_FIELD_LABELS, LEAD_SOURCE_IDS } from "../crm/catalog";
 import type { ClientFields, CrmPort, CrmScope } from "../crm/CrmPort";
-import { NOTHING_TO_SAVE_ANSWER, orNotFound, savedAnswer, text } from "./crmAnswers";
+import { FieldGuard, NOTHING_TO_SAVE_ANSWER, orNotFound, savedAnswer, text } from "./crmAnswers";
+
+const emailSchema = z.string().email();
+const MIN_LANDLINE_DIGITS = 8;
 
 export const UPDATE_CUSTOMER_TOOL_NAME = "atualizar_cliente";
 
@@ -31,17 +34,18 @@ export async function updateCustomer(crm: CrmPort, scope: CrmScope, args: Update
   const put = (key: keyof ClientFields, value: string | undefined) => {
     if (value !== undefined) fields[key] = value;
   };
-  put("email", text(args.email));
-  put("landline", text(args.telefone_fixo));
+  const guard = new FieldGuard(CLIENT_FIELD_LABELS);
+  put("email", guard.text("email", args.email, (v) => emailSchema.safeParse(v).success));
+  put("landline", guard.text("landline", args.telefone_fixo, (v) => v.replace(/\D/g, "").length >= MIN_LANDLINE_DIGITS));
   put("lead_source", args.origem);
   put("referred_by", text(args.quem_indicou));
   put("company", text(args.empresa));
 
-  let note = "";
+  let note = guard.suffix();
   const birthday = text(args.aniversario);
   if (birthday !== undefined) {
     if (isRealDate(birthday)) fields.birthday = birthday;
-    else note = BIRTHDAY_INVALID;
+    else note += BIRTHDAY_INVALID;
   }
 
   if (Object.keys(fields).length === 0) return `${NOTHING_TO_SAVE_ANSWER}${note}`;
@@ -56,7 +60,7 @@ export function createUpdateCustomerTool(crm: CrmPort, scope: CrmScope) {
       telefone_fixo: z.string().optional().describe("Telefone fixo do cliente"),
       aniversario: z.string().optional().describe("Data de aniversário no formato AAAA-MM-DD"),
       origem: z.enum(LEAD_SOURCE_IDS).optional().describe("Como o cliente conheceu a Fiuza Marine"),
-      quem_indicou: z.string().optional().describe("Nome de quem indicou o cliente"),
+      quem_indicou: z.string().optional().describe("Nome de quem indicou o cliente (junto com origem indicacao)"),
       empresa: z.string().optional().describe("Empresa do cliente"),
     }),
     execute: (args) => updateCustomer(crm, scope, args),

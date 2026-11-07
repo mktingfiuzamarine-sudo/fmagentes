@@ -2,9 +2,11 @@ import { tool } from "ai";
 import { z } from "zod";
 import { AGENT_DEAL_FIELDS, DEAL_FIELD_LABELS, PIPELINE_IDS, VESSEL_KIND_IDS, type PipelineId } from "../crm/catalog";
 import type { CrmPort, CrmScope, DealFields } from "../crm/CrmPort";
-import { NOT_FOUND_ANSWER, finiteNumber, isUuid, orNotFound, savedAnswer, text } from "./crmAnswers";
+import { FieldGuard, NOT_FOUND_ANSWER, NOTHING_TO_SAVE_ANSWER, isUuid, orNotFound, savedAnswer, text } from "./crmAnswers";
 
 export const REGISTER_DEAL_TOOL_NAME = "registrar_negocio";
+
+const MAX_TITLE = 120;
 
 export interface RegisterDealArgs {
   funil: PipelineId;
@@ -24,18 +26,20 @@ export async function registerDeal(crm: CrmPort, scope: CrmScope, args: Register
   const vesselId = text(args.embarcacao_id);
   if (vesselId !== undefined && !isUuid(vesselId)) return NOT_FOUND_ANSWER;
 
+  const guard = new FieldGuard(DEAL_FIELD_LABELS);
+  const allowed = AGENT_DEAL_FIELDS[args.funil] as readonly string[];
   const candidate: Record<string, string | number | undefined> = {
     product_type: args.tipo_produto,
     brand: text(args.marca),
     model: text(args.modelo),
-    year: finiteNumber(args.ano),
+    year: allowed.includes("year") ? guard.year("year", args.ano) : undefined,
     administrator: text(args.administradora),
     part_description: text(args.descricao_peca),
     vessel_id: vesselId,
     service_description: text(args.descricao_servico),
   };
   const fields: Record<string, string | number> = {};
-  for (const key of AGENT_DEAL_FIELDS[args.funil] as readonly string[]) {
+  for (const key of allowed) {
     const value = candidate[key];
     if (value !== undefined) fields[key] = value;
   }
@@ -45,14 +49,16 @@ export async function registerDeal(crm: CrmPort, scope: CrmScope, args: Register
     const open = await crm.findOpenDeal(scope, args.funil);
     if (open) {
       const result = await crm.fillDeal(scope, open.id, dealFields);
+      if (result.filled.length === 0 && result.conflicts.length === 0) {
+        return `Negócio já aberto neste funil (negocio_id: ${open.id}). ${NOTHING_TO_SAVE_ANSWER}${guard.suffix()}`;
+      }
       const base = `Negócio já aberto neste funil foi atualizado (negocio_id: ${open.id}).`;
-      return result.conflicts.length === 0
-        ? base
-        : `${base}${savedAnswer(result, DEAL_FIELD_LABELS).slice("Salvo.".length)}`;
+      return `${base}${savedAnswer(result, DEAL_FIELD_LABELS).slice("Salvo.".length)}${guard.suffix()}`;
     }
-    const title = text(args.titulo) ?? "Novo negócio";
+    // Comes from the customer's words: one line, capped, as it shows on the board and in the prompt.
+    const title = (text(args.titulo) ?? "Novo negócio").replace(/\s+/g, " ").slice(0, MAX_TITLE).trim();
     const created = await crm.createDeal(scope, args.funil, title, dealFields);
-    return `Negócio aberto (negocio_id: ${created.id}).`;
+    return `Negócio aberto (negocio_id: ${created.id}).${guard.suffix()}`;
   });
 }
 

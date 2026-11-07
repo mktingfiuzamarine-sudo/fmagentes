@@ -70,13 +70,23 @@ export interface CrmPort {
    * Throws CrmNotInScopeError unless `scope.verified`.
    */
   fillClient(scope: CrmScope, fields: ClientFields): Promise<FillResult>;
-  /** `notes` is accepted on creation only (a free-text line, e.g. an unlisted brand). */
+  /**
+   * `notes` is a free-text line (e.g. an unlisted brand). Returns the id of a vessel in scope of the
+   * same kind whose saved fields already match every given field instead of inserting a duplicate.
+   */
   createVessel(scope: CrmScope, kind: VesselKind, fields: VesselFields & { notes?: string }): Promise<{ id: string }>;
   /**
    * Throws CrmNotInScopeError when the vessel is missing or outside the scope (checked first), then
    * CrmVesselKindMismatchError, writing nothing, when the vessel is not of `expectedKind`.
+   * `noteLine` (e.g. an unlisted brand) is appended to notes once.
    */
-  fillVessel(scope: CrmScope, vesselId: string, fields: VesselFields, expectedKind: VesselKind): Promise<FillResult & { kind: VesselKind }>;
+  fillVessel(
+    scope: CrmScope,
+    vesselId: string,
+    fields: VesselFields,
+    expectedKind: VesselKind,
+    noteLine?: string,
+  ): Promise<FillResult & { kind: VesselKind }>;
   /** Most recently updated deal of that pipeline in scope that is not in its last stage. */
   findOpenDeal(scope: CrmScope, pipeline: PipelineId): Promise<{ id: string } | null>;
   /** Always in the pipeline's first stage. A `vessel_id` outside the scope throws CrmNotInScopeError. */

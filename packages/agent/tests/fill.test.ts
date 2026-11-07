@@ -35,6 +35,12 @@ describe("planFill", () => {
     expect(r.filled).toEqual([]);
   });
 
+  it("appends extra note lines once, capped to one line", () => {
+    const r = planFill({ email: null }, {}, labels, "VIP", ["Quem indicou: João\nda Silva"]);
+    expect(r.patch).toEqual({ notes: "VIP\nQuem indicou: João da Silva" });
+    expect(planFill({}, {}, labels, "VIP\nQuem indicou: João da Silva", ["Quem indicou: João da Silva"]).patch).toEqual({});
+  });
+
   it("compares numbers by value", () => {
     expect(planFill({ year: 2018 }, { year: 2018 }, labels, null).patch).toEqual({});
     const r = planFill({ year: 2018 }, { year: 2019 }, labels, null);

@@ -11,7 +11,7 @@ import {
   type VesselKind,
 } from "../crm/catalog";
 import { CrmVesselKindMismatchError, type CrmPort, type CrmScope, type VesselFields } from "../crm/CrmPort";
-import { NOT_FOUND_ANSWER, NOTHING_TO_SAVE_ANSWER, finiteNumber, isUuid, orNotFound, savedAnswer, text } from "./crmAnswers";
+import { FieldGuard, NOT_FOUND_ANSWER, NOTHING_TO_SAVE_ANSWER, isUuid, orNotFound, savedAnswer, text } from "./crmAnswers";
 
 export const REGISTER_VESSEL_TOOL_NAME = "registrar_embarcacao";
 
@@ -50,7 +50,7 @@ function matchBrand(kind: VesselKind, raw: string): string | undefined {
 }
 
 /** Only the fields that belong to the chosen kind; the rest is dropped silently. */
-function fieldsFor(args: RegisterVesselArgs): { fields: VesselFields; unlistedBrand?: string } {
+function fieldsFor(args: RegisterVesselArgs, guard: FieldGuard): { fields: VesselFields; unlistedBrand?: string } {
   const fields: VesselFields = {};
   const put = (key: keyof VesselFields, value: string | number | undefined) => {
     if (value !== undefined) (fields as Record<string, string | number>)[key] = value;
@@ -60,14 +60,14 @@ function fieldsFor(args: RegisterVesselArgs): { fields: VesselFields; unlistedBr
   if (args.tipo === "barco_lancha") {
     put("hull_type", args.tipo_casco);
     put("builder", text(args.estaleiro));
-    put("length_m", finiteNumber(args.tamanho_metros));
-    put("length_ft", finiteNumber(args.tamanho_pes));
-    put("boat_year", finiteNumber(args.ano_barco));
+    put("length_m", guard.positive("length_m", args.tamanho_metros));
+    put("length_ft", guard.positive("length_ft", args.tamanho_pes));
+    put("boat_year", guard.year("boat_year", args.ano_barco));
     put("engine_count", args.quantidade_motores);
     put("engine_type", args.tipo_motor);
     put("engine_brand", text(args.marca_motor));
-    put("horsepower", finiteNumber(args.potencia_hp));
-    put("engine_year", finiteNumber(args.ano_motor));
+    put("horsepower", guard.positive("horsepower", args.potencia_hp));
+    put("engine_year", guard.year("engine_year", args.ano_motor));
     return { fields };
   }
 
@@ -78,8 +78,8 @@ function fieldsFor(args: RegisterVesselArgs): { fields: VesselFields; unlistedBr
     else unlistedBrand = brand;
   }
   put("model", text(args.modelo));
-  put("year", finiteNumber(args.ano));
-  if (args.tipo === "motor_popa") put("horsepower", finiteNumber(args.potencia_hp));
+  put("year", guard.year("year", args.ano));
+  if (args.tipo === "motor_popa") put("horsepower", guard.positive("horsepower", args.potencia_hp));
   return { fields, unlistedBrand };
 }
 
@@ -93,14 +93,16 @@ export async function registerVessel(crm: CrmPort, scope: CrmScope, args: Regist
   const vesselId = text(args.embarcacao_id);
   if (vesselId !== undefined && !isUuid(vesselId)) return NOT_FOUND_ANSWER;
 
-  const { fields, unlistedBrand } = fieldsFor(args);
+  const guard = new FieldGuard(VESSEL_FIELD_LABELS);
+  const { fields, unlistedBrand } = fieldsFor(args, guard);
+  const brandLine = unlistedBrand !== undefined ? brandNote(unlistedBrand) : undefined;
 
   if (vesselId !== undefined) {
-    // fillVessel takes no notes: an unlisted brand is dropped when completing.
-    if (Object.keys(fields).length === 0) return NOTHING_TO_SAVE_ANSWER;
+    if (Object.keys(fields).length === 0 && brandLine === undefined) return `${NOTHING_TO_SAVE_ANSWER}${guard.suffix()}`;
     return orNotFound(async () => {
       try {
-        return savedAnswer(await crm.fillVessel(scope, vesselId, fields, args.tipo), VESSEL_FIELD_LABELS);
+        const result = await crm.fillVessel(scope, vesselId, fields, args.tipo, brandLine);
+        return `${savedAnswer(result, VESSEL_FIELD_LABELS)}${guard.suffix()}`;
       } catch (error) {
         if (error instanceof CrmVesselKindMismatchError) return OTHER_KIND_ANSWER;
         throw error;
@@ -111,16 +113,16 @@ export async function registerVessel(crm: CrmPort, scope: CrmScope, args: Regist
   return orNotFound(async () => {
     const created = await crm.createVessel(scope, args.tipo, {
       ...fields,
-      ...(unlistedBrand !== undefined ? { notes: brandNote(unlistedBrand) } : {}),
+      ...(brandLine !== undefined ? { notes: brandLine } : {}),
     });
-    return `Embarcação registrada (embarcacao_id: ${created.id}).`;
+    return `Embarcação registrada (embarcacao_id: ${created.id}).${guard.suffix()}`;
   });
 }
 
 export function createRegisterVesselTool(crm: CrmPort, scope: CrmScope) {
   return tool({
     description:
-      "Registra uma embarcação ou motor que o cliente JÁ TEM (não o que quer comprar). Use embarcacao_id para completar uma já registrada.",
+      "Registra uma embarcação ou motor que o cliente JÁ TEM (não o que quer comprar). Se ela já aparece em Embarcações do cliente, use o embarcacao_id dela para completar em vez de registrar de novo.",
     parameters: z.object({
       embarcacao_id: z.string().optional().describe("Id de uma embarcação já registrada, para completar os dados dela"),
       tipo: z.enum(VESSEL_KIND_IDS).describe("barco_lancha, jet_ski ou motor_popa"),

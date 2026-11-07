@@ -49,6 +49,13 @@ describe("updateCustomer", () => {
     expect(crm.fillClient).toHaveBeenCalledWith(SCOPE, { birthday: "1990-02-10" });
   });
 
+  it("discards an invalid e-mail or landline and says so", async () => {
+    const crm = createFakeCrm();
+    const answer = await updateCustomer(crm, SCOPE, { email: "não tenho", telefone_fixo: "123", empresa: "Acme" });
+    expect(crm.fillClient).toHaveBeenCalledWith(SCOPE, { company: "Acme" });
+    expect(answer).toBe("Salvo. Não salvo por estar fora do esperado: E-mail, Telefone fixo.");
+  });
+
   it("has nothing to save when every field is blank", async () => {
     const crm = createFakeCrm();
     expect(await updateCustomer(crm, SCOPE, { email: "  " })).toBe("Nada novo para salvar.");
