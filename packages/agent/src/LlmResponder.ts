@@ -26,6 +26,11 @@ const PROMISE_TO_ACT =
 const ACT_NOW_NUDGE =
   "Sua resposta prometeu fazer algo depois, mas nada acontece depois: o cliente só recebe a sua resposta final. Se precisa gravar algo, chame a ferramenta agora e então escreva a resposta final, sem prometer ações futuras. Se é algo que você não pode fazer (estoque, disponibilidade, prazo, preço), transfira para um atendente humano.";
 
+/** Words of a reply that says something was saved ("registrei", "foi registrado", "anotei"...). */
+const CLAIMS_SAVED = /\b(registrei|anotei|cadastrei|gravei)\b|\bfoi (registrad|anotad|cadastrad)[oa]\b|\b(est[aá]|ficou) (registrad|anotad|cadastrad)[oa]\b/i;
+const SAVE_NOW_NUDGE =
+  "Sua resposta diz que algo foi registrado, mas você não chamou nenhuma ferramenta nesta resposta, então nada foi gravado. Se há algo novo para registrar, chame a ferramenta agora e então escreva a resposta final. Se já estava registrado antes, diga isso sem afirmar que registrou agora.";
+
 const STEPS_EXHAUSTED_SUMMARY = "O bot não concluiu a resposta (usou todas as etapas em ferramentas). Veja o histórico.";
 
 /** Statuses that mean the agent's configuration is wrong, not that the call failed. */
@@ -116,8 +121,17 @@ export class LlmResponder implements ResponderPort {
     const hasHandoff = () => steps.some((step) => step.toolCalls.some((call) => call.toolName === HANDOFF_TOOL_NAME));
     // The customer never gets a "later": a promise to act is not sent, the
     // model is asked once to act now and write the final answer.
-    if (!hasHandoff() && PROMISE_TO_ACT.test(result.text)) {
-      result = await run([...prompt, ...result.responseMessages, { role: "system", content: ACT_NOW_NUDGE }]);
+    // Nor a claim of having saved when no tool ran in this turn.
+    const savedSomething = steps.some((step) => step.toolCalls.some((call) => call.toolName !== HANDOFF_TOOL_NAME));
+    const nudge = hasHandoff()
+      ? undefined
+      : PROMISE_TO_ACT.test(result.text)
+        ? ACT_NOW_NUDGE
+        : CLAIMS_SAVED.test(result.text) && !savedSomething
+          ? SAVE_NOW_NUDGE
+          : undefined;
+    if (nudge) {
+      result = await run([...prompt, ...result.responseMessages, { role: "system", content: nudge }]);
       steps.push(...result.steps);
     }
 

@@ -194,6 +194,34 @@ describe("LlmResponder", () => {
     expect(calls).toHaveLength(2);
   });
 
+  it("does not send a claim of saving when nothing was saved: asks the model to save now", async () => {
+    const crm = createFakeCrm();
+    const { model, calls } = scripted(
+      text("Registrei seu interesse em comprar um motor de popa Suzuki 250 HP."),
+      toolCall("registrar_negocio", { funil: "vendas", titulo: "Compra motor Suzuki 250 HP", tipo_produto: "motor_popa" }, "c1"),
+      text("Pronto! Registrei seu interesse no Suzuki 250 HP."),
+    );
+    const result = await responderWith(model, { crm }).responder.generate({ ...INPUT, customer: VERIFIED });
+
+    expect(result).toEqual({ kind: "reply", text: "Pronto! Registrei seu interesse no Suzuki 250 HP." });
+    expect(crm.createDeal).toHaveBeenCalledTimes(1);
+    const nudge = calls[1].prompt.at(-1) as { role: string; content: string };
+    expect(nudge.role).toBe("system");
+    expect(nudge.content).toContain("não chamou nenhuma ferramenta");
+  });
+
+  it("sends a claim of saving as it is when a save really happened", async () => {
+    const { model, calls } = scripted(
+      toolCall("registrar_negocio", { funil: "pecas", titulo: "Hélice" }, "c1"),
+      text("Registrei seu pedido da hélice."),
+    );
+    await expect(responderWith(model).responder.generate({ ...INPUT, customer: VERIFIED })).resolves.toEqual({
+      kind: "reply",
+      text: "Registrei seu pedido da hélice.",
+    });
+    expect(calls).toHaveLength(2);
+  });
+
   it("does not ask again for an ordinary reply", async () => {
     const { model, calls } = scripted(text("Qual é a potência do motor?"));
     await responderWith(model).responder.generate({ ...INPUT, customer: VERIFIED });
