@@ -134,12 +134,12 @@ describe("LlmResponder", () => {
     expect(crm.createVessel).toHaveBeenCalledWith(expect.anything(), "motor_popa", { horsepower: 115 });
   });
 
-  it("logs each tool call, with only the keys of personal-data tools", async () => {
+  it("logs each tool call, showing values only for non-personal fields", async () => {
     const crm = createFakeCrm();
     const lines: string[] = [];
     const { model } = scripted(
       toolCall("atualizar_cliente", { email: "ana@example.com" }, "c1"),
-      toolCall("registrar_negocio", { funil: "manutencao", titulo: "Revisão" }, "c2"),
+      toolCall("registrar_negocio", { funil: "manutencao", titulo: "Revisão da Ana" }, "c2"),
       text("Anotado!"),
     );
     const responder = new LlmResponder({
@@ -151,9 +151,10 @@ describe("LlmResponder", () => {
     await responder.generate({ ...INPUT, customer: VERIFIED });
     expect(lines).toEqual([
       "[tool] conv conv-1 atualizar_cliente email -> Salvo.",
-      '[tool] conv conv-1 registrar_negocio {"funil":"manutencao","titulo":"Revisão"} -> Negócio aberto (negocio_id: deal-new).',
+      '[tool] conv conv-1 registrar_negocio funil="manutencao" titulo -> Negócio aberto (negocio_id: deal-new).',
     ]);
     expect(lines.join("\n")).not.toContain("ana@example.com");
+    expect(lines.join("\n")).not.toContain("Revisão da Ana");
   });
 
   it("still sends every tool's parameters as a JSON object schema", async () => {

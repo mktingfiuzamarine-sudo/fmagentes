@@ -35,15 +35,26 @@ export interface LlmResponderOptions {
   logToolCall?: (line: string) => void;
 }
 
-/** Tools whose arguments carry personal data (CPF, e-mail): only their keys are logged. */
-const KEYS_ONLY_TOOLS = new Set([REGISTER_TOOL_NAME, UPDATE_CUSTOMER_TOOL_NAME]);
+/**
+ * Argument values safe to log (ids, catalog choices, vessel specs). Any other argument (CPF, e-mail,
+ * name, free text in the customer's words) is logged by key only.
+ */
+const LOGGED_VALUES = new Set([
+  "funil", "tipo", "tipo_produto", "embarcacao_id", "tipo_casco", "quantidade_motores", "tipo_motor",
+  "marca", "modelo", "ano", "marca_motor", "potencia_hp", "ano_motor", "ano_barco", "tamanho_metros", "tamanho_pes", "origem",
+]);
 const MAX_LOG_PART = 300;
 
+function shownArgs(args: unknown): string {
+  if (!args || typeof args !== "object") return "";
+  return Object.entries(args)
+    .map(([key, value]) => (LOGGED_VALUES.has(key) ? `${key}=${JSON.stringify(value)}` : key))
+    .join(" ");
+}
+
 function toolCallLine(conversationId: string, toolName: string, args: unknown, answer: unknown): string {
-  const shownArgs =
-    KEYS_ONLY_TOOLS.has(toolName) && args && typeof args === "object" ? Object.keys(args).join(",") : JSON.stringify(args);
   const shownAnswer = typeof answer === "string" ? answer : JSON.stringify(answer);
-  return `[tool] conv ${conversationId} ${toolName} ${String(shownArgs).slice(0, MAX_LOG_PART)} -> ${String(shownAnswer).slice(0, MAX_LOG_PART)}`;
+  return `[tool] conv ${conversationId} ${toolName} ${shownArgs(args).slice(0, MAX_LOG_PART)} -> ${String(shownAnswer).slice(0, MAX_LOG_PART)}`;
 }
 
 export class LlmResponder implements ResponderPort {
