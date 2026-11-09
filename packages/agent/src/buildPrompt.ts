@@ -1,4 +1,6 @@
 import type { CoreMessage } from "ai";
+import type { CrmSnapshot } from "./crm/CrmPort";
+import { CLIENT_FIELD_LABELS, PIPELINE_LABELS } from "./crm/catalog";
 import type { AgentConfig, CustomerContext, HistoryMessage } from "@fmagentes/messaging";
 
 export const PLATFORM_INSTRUCTIONS = [
@@ -8,6 +10,11 @@ export const PLATFORM_INSTRUCTIONS = [
   "- Se o cliente pedir para falar com um humano, chame a ferramenta transferir_para_humano imediatamente. Se faltarem dados básicos, peça uma única vez; se o cliente insistir, transfira mesmo assim.",
   "- Antes de transferir, colete o que as instruções do negócio pedirem e escreva no campo resumo um resumo do atendimento para o atendente humano.",
   "- Depois de chamar transferir_para_humano, não escreva mais nada: a mensagem de transferência é enviada automaticamente.",
+  "- Quando o cliente mencionar algo que tem lugar no CRM (dados dele, embarcações ou motores que já tem, o que quer comprar, consórcio, peça, conserto), grave com a ferramenta certa, aos poucos, sem avisar nem pedir confirmação.",
+  "- Pergunte só o que for necessário para o próximo passo do atendimento, uma coisa por vez. Se o cliente não souber ou não quiser responder, siga em frente. Nunca faça uma lista de perguntas.",
+  "- Abra o negócio pelo assunto: compra de barco, lancha, jet ski ou motor → vendas; consórcio → consorcios; peça ou acessório → pecas; conserto, revisão ou manutenção → manutencao. Em manutenção, registre antes a embarcação ou motor e informe o embarcacao_id.",
+  "- Antes de registrar uma embarcação, confira a lista Embarcações do cliente: se ela já estiver lá, use o embarcacao_id dela em vez de registrar de novo.",
+  "- Nunca pergunte, sugira ou grave valores em dinheiro.",
 ].join("\n");
 
 /**
@@ -21,13 +28,41 @@ function capped(content: string): string {
   return content.length > MAX_PROMPT_MESSAGE_CHARS ? content.slice(0, MAX_PROMPT_MESSAGE_CHARS) + CUT_MARKER : content;
 }
 
-export function customerContextBlock(customer: CustomerContext): string {
-  if (customer.status === "unregistered") {
-    return "Cliente SEM cadastro. Antes de prosseguir com o atendimento, peça nome completo, CPF e e-mail e chame cadastrar_cliente.";
+const UNVERIFIED_FIRST_LINE =
+  "Cliente identificado pelo CPF/CNPJ que digitou, sem confirmação. Não cite nenhum dado do cadastro. Você pode registrar embarcações e negócios novos; não atualize a ficha.";
+const LEAD_SOURCE_LINE =
+  "Origem do lead vazia: pergunte uma única vez nesta conversa, de forma leve, como o cliente conheceu a Fiuza Marine, e grave com atualizar_cliente.";
+
+function recordLines(snapshot: CrmSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.vessels.length > 0) {
+    lines.push("Embarcações do cliente:", ...snapshot.vessels.map((v) => `- ${v.summary} (embarcacao_id: ${v.id})`));
   }
-  return customer.name
-    ? `Cliente cadastrado: ${customer.name}. Trate o cliente pelo nome.`
-    : "Cliente cadastrado.";
+  if (snapshot.openDeals.length > 0) {
+    lines.push(
+      "Negócios abertos:",
+      ...snapshot.openDeals.map((d) => `- ${PIPELINE_LABELS[d.pipeline]} · ${d.stageLabel} · ${d.title} (negocio_id: ${d.id})`),
+    );
+  }
+  return lines;
+}
+
+export function customerContextBlock(customer: CustomerContext, snapshot?: CrmSnapshot): string {
+  if (customer.status === "unregistered") {
+    return "Cliente SEM cadastro. Antes de prosseguir com o atendimento, peça nome completo, CPF ou CNPJ e e-mail e chame cadastrar_cliente.";
+  }
+  if (!customer.verified) {
+    return [UNVERIFIED_FIRST_LINE, ...(snapshot ? recordLines(snapshot) : [])].join("\n");
+  }
+  const lines = [customer.name ? `Cliente cadastrado: ${customer.name}. Trate o cliente pelo nome.` : "Cliente cadastrado."];
+  if (snapshot) {
+    if (snapshot.missingClientFields.length > 0) {
+      lines.push(`Campos da ficha ainda vazios: ${snapshot.missingClientFields.map((f) => CLIENT_FIELD_LABELS[f]).join(", ")}.`);
+      if (snapshot.missingClientFields.includes("lead_source")) lines.push(LEAD_SOURCE_LINE);
+    }
+    lines.push(...recordLines(snapshot));
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -43,6 +78,7 @@ export function buildPrompt(input: {
   history: HistoryMessage[];
   incoming: HistoryMessage;
   customer: CustomerContext;
+  snapshot?: CrmSnapshot;
 }): CoreMessage[] {
   const { incoming } = input;
   const isIncoming = (message: HistoryMessage) =>
@@ -58,7 +94,7 @@ export function buildPrompt(input: {
       content: `${PLATFORM_INSTRUCTIONS}\n\n## Instruções do negócio\n${input.agent.systemPrompt}`,
       experimental_providerMetadata: { anthropic: { cacheControl: { type: "ephemeral" } } },
     },
-    { role: "system", content: `## Cliente\n${customerContextBlock(input.customer)}` },
+    { role: "system", content: `## Cliente\n${customerContextBlock(input.customer, input.snapshot)}` },
     // Spelled out per role: CoreMessage is a discriminated union, so a
     // `role: "user" | "assistant"` object literal would not type-check.
     ...history.map(

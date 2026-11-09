@@ -4,13 +4,13 @@ import { CrmCpfTakenError } from "../src/crm/CrmPort";
 import { createFakeCrm } from "./support/fakeCrm";
 
 const PHONE = "5511988887777";
-const VALID = { nome: " Bruno Lima ", cpf: "529.982.247-25", email: " Bruno@Example.com " };
+const VALID = { nome: " Bruno Lima ", cpf_cnpj: "529.982.247-25", email: " Bruno@Example.com " };
 const EXISTING = { id: "crm-1", name: "Ana Souza", phone: "11 3333-4444", notes: "VIP, e-mail ana@example.com" };
 
 describe("registerCustomer", () => {
   it.each([
     ["blank name", { ...VALID, nome: "  " }, /nome/i],
-    ["invalid CPF", { ...VALID, cpf: "111.111.111-11" }, /CPF inválido/],
+    ["invalid CPF or CNPJ", { ...VALID, cpf_cnpj: "111.111.111-11" }, /CPF ou CNPJ inválido/],
     ["invalid e-mail", { ...VALID, email: "bruno@" }, /e-mail inválido/],
   ])("rejects %s without touching the CRM", async (_label, args, message) => {
     const crm = createFakeCrm();
@@ -35,6 +35,21 @@ describe("registerCustomer", () => {
       phone: PHONE,
     });
     expect(outcome.linked).toEqual({ crmClientId: "crm-new", via: "created" });
+  });
+
+  it("creates a client with a CNPJ", async () => {
+    const crm = createFakeCrm();
+    const outcome: RegistrationOutcome = {};
+
+    await expect(
+      registerCustomer(crm, PHONE, { ...VALID, cpf_cnpj: "11.222.333/0001-81" }, outcome),
+    ).resolves.toMatch(/criado/i);
+    expect(crm.create).toHaveBeenCalledWith({
+      name: "Bruno Lima",
+      cpf: "11222333000181",
+      email: "bruno@example.com",
+      phone: PHONE,
+    });
   });
 
   it("links an existing CPF, attaches the phone and reveals nothing stored", async () => {

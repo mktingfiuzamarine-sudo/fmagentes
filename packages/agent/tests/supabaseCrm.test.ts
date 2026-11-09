@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { CrmNotInScopeError, CrmVesselKindMismatchError, type CrmScope } from "../src/crm/CrmPort";
 import { AGENT_CREATED_NOTE, CrmCpfTakenError, createSupabaseCrm } from "../src/crm/supabaseCrm";
 import { createSupabaseMock, type Handler, type TableCall } from "./support/supabaseMock";
 
@@ -191,6 +192,544 @@ Outro WhatsApp (não verificado): 5511988887777` },
       const { crm, updates } = attachScenario({ phone: "+55 11 98888-7777", notes: null });
       await crm.attachPhone("crm-1", "5511988887777");
       expect(updates).toEqual([]);
+    });
+  });
+});
+
+const VERIFIED: CrmScope = { clientId: "crm-1", verified: true, conversationId: "conv-1" };
+const UNVERIFIED: CrmScope = { clientId: "crm-1", verified: false, conversationId: "conv-1" };
+
+function crmWithTables(handlers: Record<string, Handler>) {
+  const supabase = createSupabaseMock(handlers);
+  return { crm: createSupabaseCrm(supabase as never, { agentUserId: AGENT_USER }), supabase };
+}
+
+const isUpdate = (calls: TableCall) => calls.some((c) => c.op === "update");
+const updateOf = (calls: TableCall) => calls.find((c) => c.op === "update")!.args[0];
+const guardsOf = (calls: TableCall) => calls.filter((c) => c.op === "eq");
+
+/** A table whose reads return `rows` in turn (last one repeats) and whose updates return `writes` in turn. */
+function rowTable(rows: unknown[], writes: unknown[][] = [[{ id: "row" }]]) {
+  const updates: TableCall[] = [];
+  let reads = 0;
+  const handler: Handler = (calls) => {
+    if (isUpdate(calls)) {
+      updates.push(calls);
+      return { data: writes[Math.min(updates.length - 1, writes.length - 1)], error: null };
+    }
+    const row = rows[Math.min(reads, rows.length - 1)];
+    reads++;
+    return { data: row, error: null };
+  };
+  return { handler, updates, reads: () => reads };
+}
+
+const CLIENT_ROW = {
+  id: "crm-1",
+  email: null,
+  landline: "1133334444",
+  birthday: null,
+  lead_source: "instagram",
+  referred_by: null,
+  company: "",
+  notes: null,
+  updated_at: "2026-11-01T10:00:00Z",
+};
+
+describe("CRM records", () => {
+  describe("loadSnapshot", () => {
+    it("verified: lists missing client fields, vessels and open deals", async () => {
+      const recorded: Record<string, TableCall> = {};
+      const { crm } = crmWithTables({
+        clients: (calls) => ((recorded.clients = calls), { data: CLIENT_ROW, error: null }),
+        vessels: (calls) => (
+          (recorded.vessels = calls),
+          { data: [{ id: "v1", kind: "jet_ski", brand: "sea_doo", model: "GTI", year: 2020 }], error: null }
+        ),
+        deals: (calls) => (
+          (recorded.deals = calls),
+          {
+            data: [
+              { id: "d1", pipeline: "vendas", stage: "proposta", title: "Lancha 26" },
+              { id: "d2", pipeline: "vendas", stage: "fechado", title: "Antigo" },
+              { id: "d3", pipeline: "manutencao", stage: "entregue", title: "Revisão" },
+            ],
+            error: null,
+          }
+        ),
+      });
+
+      await expect(crm.loadSnapshot(VERIFIED)).resolves.toEqual({
+        missingClientFields: ["email", "birthday", "company"],
+        vessels: [{ id: "v1", kind: "jet_ski", summary: "Jet Ski · Sea-Doo GTI · 2020" }],
+        openDeals: [
+          { id: "d1", pipeline: "vendas", stageLabel: "Proposta", title: "Lancha 26" },
+          { id: "d3", pipeline: "manutencao", stageLabel: "Entregue", title: "Revisão" },
+        ],
+      });
+      expect(recorded.clients).toContainEqual({ op: "eq", args: ["id", "crm-1"] });
+      expect(recorded.deals).toContainEqual({
+        op: "or",
+        args: [
+          "and(pipeline.eq.vendas,stage.neq.fechado),and(pipeline.eq.consorcios,stage.neq.encerrado)," +
+            "and(pipeline.eq.pecas,stage.neq.entregue),and(pipeline.eq.manutencao,stage.neq.pago)",
+        ],
+      });
+      for (const table of ["vessels", "deals"]) {
+        expect(recorded[table]).toContainEqual({ op: "eq", args: ["client_id", "crm-1"] });
+        expect(recorded[table]).toContainEqual({ op: "limit", args: [20] });
+        expect(recorded[table].map((c) => c.args[0])).not.toContain("created_by_conversation");
+      }
+    });
+
+    it("verified: asks who referred only when the lead came by referral", async () => {
+      const { crm } = crmWithTables({
+        clients: () => ({
+          data: { ...CLIENT_ROW, email: "a@b.com", company: "X", birthday: "1980-01-01", lead_source: "indicacao" },
+          error: null,
+        }),
+        vessels: () => ({ data: [], error: null }),
+        deals: () => ({ data: [], error: null }),
+      });
+      await expect(crm.loadSnapshot(VERIFIED)).resolves.toMatchObject({ missingClientFields: ["referred_by"] });
+    });
+
+    it("unverified: reads only what this conversation created", async () => {
+      const recorded: Record<string, TableCall> = {};
+      const { crm, supabase } = crmWithTables({
+        clients: () => ({ data: CLIENT_ROW, error: null }),
+        vessels: (calls) => ((recorded.vessels = calls), { data: [], error: null }),
+        deals: (calls) => ((recorded.deals = calls), { data: [], error: null }),
+      });
+
+      await expect(crm.loadSnapshot(UNVERIFIED)).resolves.toEqual({ missingClientFields: [], vessels: [], openDeals: [] });
+      expect(supabase.from).not.toHaveBeenCalledWith("clients");
+      for (const table of ["vessels", "deals"]) {
+        expect(recorded[table]).toContainEqual({ op: "eq", args: ["client_id", "crm-1"] });
+        expect(recorded[table]).toContainEqual({ op: "eq", args: ["created_by_conversation", "conv-1"] });
+      }
+    });
+  });
+
+  describe("fillClient", () => {
+    it("writes only empty fields guarded by updated_at", async () => {
+      const t = rowTable([{ ...CLIENT_ROW, company: "ACME" }]);
+      const { crm } = crmWithTables({ clients: t.handler });
+
+      await expect(crm.fillClient(VERIFIED, { email: "a@b.com", company: "acme" })).resolves.toEqual({
+        filled: ["email"],
+        conflicts: [],
+      });
+      expect(t.updates.map(updateOf)).toEqual([{ email: "a@b.com" }]);
+      expect(guardsOf(t.updates[0])).toEqual([
+        { op: "eq", args: ["id", "crm-1"] },
+        { op: "eq", args: ["updated_at", "2026-11-01T10:00:00Z"] },
+      ]);
+      expect(t.updates[0]).toContainEqual({ op: "select", args: ["id"] });
+    });
+
+    it("notes a different value instead of overwriting", async () => {
+      const t = rowTable([{ ...CLIENT_ROW, email: "x@y.com", notes: "VIP" }]);
+      const { crm } = crmWithTables({ clients: t.handler });
+
+      await expect(crm.fillClient(VERIFIED, { email: "a@b.com" })).resolves.toEqual({ filled: [], conflicts: ["email"] });
+      expect(t.updates.map(updateOf)).toEqual([{ notes: "VIP\nCliente informou E-mail diferente: a@b.com" }]);
+    });
+
+    it("does not write when nothing changes", async () => {
+      const t = rowTable([{ ...CLIENT_ROW, email: "a@b.com" }]);
+      const { crm } = crmWithTables({ clients: t.handler });
+      await expect(crm.fillClient(VERIFIED, { email: "A@B.com" })).resolves.toEqual({ filled: [], conflicts: [] });
+      expect(t.updates).toEqual([]);
+    });
+
+    it("retries when updated_at changed", async () => {
+      const t = rowTable(
+        [CLIENT_ROW, { ...CLIENT_ROW, company: "Equipe", updated_at: "2026-11-01T10:05:00Z" }],
+        [[], [{ id: "crm-1" }]],
+      );
+      const { crm } = crmWithTables({ clients: t.handler });
+
+      await expect(crm.fillClient(VERIFIED, { email: "a@b.com", company: "Outra" })).resolves.toEqual({
+        filled: ["email"],
+        conflicts: ["company"],
+      });
+      expect(t.reads()).toBe(2);
+      expect(t.updates.map(updateOf)).toEqual([
+        { email: "a@b.com", company: "Outra" },
+        { email: "a@b.com", notes: "Cliente informou Empresa diferente: Outra" },
+      ]);
+      expect(guardsOf(t.updates[1])).toContainEqual({ op: "eq", args: ["updated_at", "2026-11-01T10:05:00Z"] });
+    });
+
+    it("gives up after 3 attempts", async () => {
+      const t = rowTable([CLIENT_ROW], [[]]);
+      const { crm } = crmWithTables({ clients: t.handler });
+      await expect(crm.fillClient(VERIFIED, { email: "a@b.com" })).rejects.toThrow(
+        "CRM clients crm-1: kept changing; not filled",
+      );
+      expect(t.updates).toHaveLength(3);
+    });
+
+    it("refuses an unverified scope", async () => {
+      const { crm, supabase } = crmWithTables({ clients: () => ({ data: CLIENT_ROW, error: null }) });
+      await expect(crm.fillClient(UNVERIFIED, { email: "a@b.com" })).rejects.toBeInstanceOf(CrmNotInScopeError);
+      expect(supabase.from).not.toHaveBeenCalled();
+    });
+
+    it("notes who referred instead of writing it when the origin is not Indicação", async () => {
+      const t = rowTable([{ ...CLIENT_ROW, lead_source: "instagram" }]);
+      const { crm } = crmWithTables({ clients: t.handler });
+
+      await expect(crm.fillClient(VERIFIED, { referred_by: "João", email: "a@b.com" })).resolves.toEqual({
+        filled: ["email"],
+        conflicts: [],
+      });
+      expect(t.updates.map(updateOf)).toEqual([{ email: "a@b.com", notes: "Quem indicou: João" }]);
+    });
+
+    it("writes who referred when the origin is Indicação, saved or in the same call", async () => {
+      const saved = rowTable([{ ...CLIENT_ROW, lead_source: "indicacao" }]);
+      await crmWithTables({ clients: saved.handler }).crm.fillClient(VERIFIED, { referred_by: "João" });
+      expect(saved.updates.map(updateOf)).toEqual([{ referred_by: "João" }]);
+
+      const sameCall = rowTable([{ ...CLIENT_ROW, lead_source: null }]);
+      await crmWithTables({ clients: sameCall.handler }).crm.fillClient(VERIFIED, {
+        lead_source: "indicacao",
+        referred_by: "João",
+      });
+      expect(sameCall.updates.map(updateOf)).toEqual([{ lead_source: "indicacao", referred_by: "João" }]);
+    });
+
+    it("notes who referred when no origin is known", async () => {
+      const t = rowTable([{ ...CLIENT_ROW, lead_source: null }]);
+      const { crm } = crmWithTables({ clients: t.handler });
+      await crm.fillClient(VERIFIED, { referred_by: "João" });
+      expect(t.updates.map(updateOf)).toEqual([{ notes: "Quem indicou: João" }]);
+    });
+
+    it("drops keys that are not client fields", async () => {
+      const t = rowTable([CLIENT_ROW]);
+      const { crm } = crmWithTables({ clients: t.handler });
+
+      await crm.fillClient(VERIFIED, { notes: "x", user_id: "y" } as never);
+      expect(t.updates).toEqual([]);
+
+      await crm.fillClient(VERIFIED, { email: "a@b.com", notes: "x", user_id: "y", cpf: "1" } as never);
+      expect(t.updates.map(updateOf)).toEqual([{ email: "a@b.com" }]);
+    });
+  });
+
+  describe("scope of vessels and deals", () => {
+    const outside = [
+      { name: "another client's record", scope: VERIFIED, row: { client_id: "crm-2", created_by_conversation: null } },
+      {
+        name: "an unverified link and another conversation",
+        scope: UNVERIFIED,
+        row: { client_id: "crm-1", created_by_conversation: "conv-2" },
+      },
+      { name: "an unverified link and a staff record", scope: UNVERIFIED, row: { client_id: "crm-1", created_by_conversation: null } },
+    ];
+
+    for (const { name, scope, row } of outside) {
+      it(`fillVessel refuses a record outside the scope: ${name}`, async () => {
+        const t = rowTable([{ id: "v-secret", kind: "motor_popa", brand: "mercury", notes: "segredo", updated_at: "t1", ...row }]);
+        const { crm } = crmWithTables({ vessels: t.handler });
+
+        const error = await crm.fillVessel(scope, "v-secret", { horsepower: 150 }, "motor_popa").catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(CrmNotInScopeError);
+        expect((error as Error).name).toBe("CrmNotInScopeError");
+        expect((error as Error).message).toBe("CRM record not in scope");
+        expect(t.updates).toEqual([]);
+      });
+
+      it(`fillDeal refuses a record outside the scope: ${name}`, async () => {
+        const t = rowTable([{ id: "d-secret", pipeline: "vendas", brand: "Fishing", notes: "segredo", updated_at: "t1", ...row }]);
+        const { crm } = crmWithTables({ deals: t.handler });
+
+        const error = await crm.fillDeal(scope, "d-secret", { model: "26" }).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(CrmNotInScopeError);
+        expect((error as Error).message).toBe("CRM record not in scope");
+        expect(t.updates).toEqual([]);
+      });
+    }
+
+    it("treats a missing record like one outside the scope", async () => {
+      const { crm } = crmWithTables({ vessels: () => ({ data: null, error: null }), deals: () => ({ data: null, error: null }) });
+      await expect(crm.fillVessel(VERIFIED, "nope", { year: 2020 }, "jet_ski")).rejects.toBeInstanceOf(CrmNotInScopeError);
+      await expect(crm.fillDeal(VERIFIED, "nope", { model: "x" })).rejects.toBeInstanceOf(CrmNotInScopeError);
+    });
+
+    it("fillVessel completes a vessel this conversation created and returns its kind", async () => {
+      const t = rowTable([
+        {
+          id: "v1",
+          client_id: "crm-1",
+          created_by_conversation: "conv-1",
+          kind: "motor_popa",
+          brand: "mercury",
+          horsepower: null,
+          notes: null,
+          updated_at: "t1",
+        },
+      ]);
+      const { crm } = crmWithTables({ vessels: t.handler });
+
+      await expect(crm.fillVessel(UNVERIFIED, "v1", { horsepower: 150, brand: "mercury" }, "motor_popa")).resolves.toEqual({
+        filled: ["horsepower"],
+        conflicts: [],
+        kind: "motor_popa",
+      });
+      expect(t.updates.map(updateOf)).toEqual([{ horsepower: 150 }]);
+      expect(guardsOf(t.updates[0])).toEqual([
+        { op: "eq", args: ["id", "v1"] },
+        { op: "eq", args: ["updated_at", "t1"] },
+      ]);
+    });
+
+    it("fillVessel appends a note line when given one", async () => {
+      const t = rowTable([{ id: "v1", client_id: "crm-1", created_by_conversation: null, kind: "jet_ski", notes: null, updated_at: "t1" }]);
+      const { crm } = crmWithTables({ vessels: t.handler });
+      await crm.fillVessel(VERIFIED, "v1", {}, "jet_ski", "Marca informada: Zeta");
+      expect(t.updates.map(updateOf)).toEqual([{ notes: "Marca informada: Zeta" }]);
+    });
+
+    it("fillVessel drops keys that are not vessel fields", async () => {
+      const t = rowTable([{ id: "v1", client_id: "crm-1", created_by_conversation: null, kind: "jet_ski", notes: null, updated_at: "t1" }]);
+      const { crm } = crmWithTables({ vessels: t.handler });
+      await crm.fillVessel(VERIFIED, "v1", { client_id: "crm-2", notes: "x", model: "GTI" } as never, "jet_ski");
+      expect(t.updates.map(updateOf)).toEqual([{ model: "GTI" }]);
+    });
+
+    it("fillVessel writes nothing when the vessel is of another kind", async () => {
+      const t = rowTable([
+        { id: "v1", client_id: "crm-1", created_by_conversation: null, kind: "motor_popa", brand: null, notes: null, updated_at: "t1" },
+      ]);
+      const { crm } = crmWithTables({ vessels: t.handler });
+      const error = await crm.fillVessel(VERIFIED, "v1", { brand: "yamaha" }, "jet_ski").catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(CrmVesselKindMismatchError);
+      expect((error as Error).message).not.toContain("motor_popa");
+      expect(t.updates).toEqual([]);
+    });
+
+    it("fillVessel reports out-of-scope, not the kind mismatch, for a foreign vessel", async () => {
+      const t = rowTable([{ id: "v1", client_id: "crm-2", created_by_conversation: null, kind: "motor_popa", updated_at: "t1" }]);
+      const { crm } = crmWithTables({ vessels: t.handler });
+      await expect(crm.fillVessel(VERIFIED, "v1", { brand: "yamaha" }, "jet_ski")).rejects.toBeInstanceOf(CrmNotInScopeError);
+    });
+  });
+
+  describe("fillDeal", () => {
+    const DEAL = {
+      id: "d1",
+      client_id: "crm-1",
+      created_by_conversation: null,
+      pipeline: "vendas",
+      brand: null,
+      notes: null,
+      updated_at: "t1",
+    };
+
+    it("drops fields that are not the agent's for the deal's pipeline", async () => {
+      const t = rowTable([DEAL]);
+      const { crm } = crmWithTables({ deals: t.handler });
+
+      await expect(
+        crm.fillDeal(VERIFIED, "d1", { consortium_value: 1, olist_proposal_number: "x" } as never),
+      ).resolves.toEqual({ filled: [], conflicts: [] });
+      expect(t.updates).toEqual([]);
+      // administrator is an agent field, but of consorcios, not vendas.
+      await crm.fillDeal(VERIFIED, "d1", { brand: "Fishing", administrator: "Itaú" });
+      expect(t.updates.map(updateOf)).toEqual([{ brand: "Fishing" }]);
+    });
+
+    it("refuses a vessel_id outside the scope", async () => {
+      const t = rowTable([{ ...DEAL, pipeline: "manutencao", vessel_id: null, service_description: null }]);
+      const { crm } = crmWithTables({
+        deals: t.handler,
+        vessels: () => ({ data: { id: "v9", client_id: "crm-2", created_by_conversation: null }, error: null }),
+      });
+
+      await expect(crm.fillDeal(VERIFIED, "d1", { vessel_id: "v9" })).rejects.toBeInstanceOf(CrmNotInScopeError);
+      expect(t.updates).toEqual([]);
+    });
+
+    it("links a vessel in the scope", async () => {
+      const t = rowTable([{ ...DEAL, pipeline: "manutencao", vessel_id: null, service_description: null }]);
+      const { crm } = crmWithTables({
+        deals: t.handler,
+        vessels: () => ({ data: { id: "v1", client_id: "crm-1", created_by_conversation: null }, error: null }),
+      });
+
+      await expect(crm.fillDeal(VERIFIED, "d1", { vessel_id: "v1", service_description: "Revisão" })).resolves.toEqual({
+        filled: ["vessel_id", "service_description"],
+        conflicts: [],
+      });
+    });
+  });
+
+  describe("createVessel", () => {
+    it("stamps the conversation only on an unverified link", async () => {
+      const inserts: unknown[] = [];
+      const { crm } = crmWithTables({
+        vessels: (calls) => {
+          const insert = calls.find((c) => c.op === "insert");
+          if (!insert) return { data: [], error: null };
+          inserts.push(insert.args[0]);
+          return { data: { id: "v-new" }, error: null };
+        },
+      });
+
+      await expect(
+        crm.createVessel(VERIFIED, "jet_ski", { brand: "sea_doo", notes: "x", user_id: "z" } as never),
+      ).resolves.toEqual({ id: "v-new" });
+      await crm.createVessel(UNVERIFIED, "motor_popa", { brand: "mercury", horsepower: 150 });
+
+      expect(inserts).toEqual([
+        {
+          user_id: AGENT_USER,
+          client_id: "crm-1",
+          kind: "jet_ski",
+          brand: "sea_doo",
+          notes: "x",
+          created_by_conversation: null,
+        },
+        {
+          user_id: AGENT_USER,
+          client_id: "crm-1",
+          kind: "motor_popa",
+          brand: "mercury",
+          horsepower: 150,
+          created_by_conversation: "conv-1",
+        },
+      ]);
+    });
+  });
+
+  describe("createVessel dedupe", () => {
+    function vesselsWith(existing: unknown[]) {
+      const recorded: TableCall[] = [];
+      const { crm } = crmWithTables({
+        vessels: (calls) => {
+          recorded.push(calls);
+          return calls.some((c) => c.op === "insert")
+            ? { data: { id: "v-new" }, error: null }
+            : { data: existing, error: null };
+        },
+      });
+      return { crm, recorded, inserted: () => recorded.some((calls) => calls.some((c) => c.op === "insert")) };
+    }
+
+    it("reuses a vessel in scope of the same kind whose saved data match (job retry)", async () => {
+      const { crm, recorded, inserted } = vesselsWith([
+        { id: "v1", kind: "motor_popa", brand: "mercury", horsepower: 150, model: null, year: null },
+      ]);
+      await expect(crm.createVessel(UNVERIFIED, "motor_popa", { brand: "mercury", horsepower: 150 })).resolves.toEqual({
+        id: "v1",
+      });
+      expect(inserted()).toBe(false);
+      expect(recorded[0]).toContainEqual({ op: "eq", args: ["kind", "motor_popa"] });
+      expect(recorded[0]).toContainEqual({ op: "eq", args: ["created_by_conversation", "conv-1"] });
+    });
+
+    it("creates a new vessel when a saved field differs", async () => {
+      const { crm, inserted } = vesselsWith([{ id: "v1", kind: "motor_popa", brand: "mercury", horsepower: 90 }]);
+      await expect(crm.createVessel(VERIFIED, "motor_popa", { brand: "mercury", horsepower: 150 })).resolves.toEqual({
+        id: "v-new",
+      });
+      expect(inserted()).toBe(true);
+    });
+
+    it("always creates when no field was given", async () => {
+      const { crm, inserted } = vesselsWith([{ id: "v1", kind: "jet_ski" }]);
+      await expect(crm.createVessel(VERIFIED, "jet_ski", {})).resolves.toEqual({ id: "v-new" });
+      expect(inserted()).toBe(true);
+    });
+  });
+
+  describe("createDeal", () => {
+    it("calls agent_create_deal with the agent user", async () => {
+      const { crm, supabase } = crmWithTables({ "rpc:agent_create_deal": () => ({ data: "deal-9", error: null }) });
+
+      await expect(
+        crm.createDeal(VERIFIED, "vendas", "Lancha 26", {
+          brand: "Fishing",
+          consortium_value: 1,
+          olist_proposal_number: "x",
+        } as never),
+      ).resolves.toEqual({ id: "deal-9" });
+      await crm.createDeal(UNVERIFIED, "pecas", "Hélice", { part_description: "Hélice 15x17" });
+
+      expect(supabase.rpc.mock.calls).toEqual([
+        [
+          "agent_create_deal",
+          {
+            p_user_id: AGENT_USER,
+            p_client_id: "crm-1",
+            p_pipeline: "vendas",
+            p_title: "Lancha 26",
+            p_fields: { brand: "Fishing" },
+            p_conversation_id: null,
+          },
+        ],
+        [
+          "agent_create_deal",
+          {
+            p_user_id: AGENT_USER,
+            p_client_id: "crm-1",
+            p_pipeline: "pecas",
+            p_title: "Hélice",
+            p_fields: { part_description: "Hélice 15x17" },
+            p_conversation_id: "conv-1",
+          },
+        ],
+      ]);
+    });
+
+    it("refuses a vessel_id outside the scope", async () => {
+      const { crm, supabase } = crmWithTables({
+        vessels: () => ({ data: { id: "v9", client_id: "crm-2", created_by_conversation: null }, error: null }),
+        "rpc:agent_create_deal": () => ({ data: "deal-9", error: null }),
+      });
+
+      await expect(crm.createDeal(VERIFIED, "manutencao", "Revisão", { vessel_id: "v9" })).rejects.toBeInstanceOf(
+        CrmNotInScopeError,
+      );
+      expect(supabase.rpc).not.toHaveBeenCalled();
+    });
+
+    it("refuses a staff vessel on an unverified link", async () => {
+      const { crm, supabase } = crmWithTables({
+        vessels: () => ({ data: { id: "v9", client_id: "crm-1", created_by_conversation: null }, error: null }),
+      });
+      await expect(crm.createDeal(UNVERIFIED, "manutencao", "Revisão", { vessel_id: "v9" })).rejects.toBeInstanceOf(
+        CrmNotInScopeError,
+      );
+      expect(supabase.rpc).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("findOpenDeal", () => {
+    it("skips deals in the last stage", async () => {
+      let recorded: TableCall = [];
+      const { crm } = crmWithTables({ deals: (calls) => ((recorded = calls), { data: [{ id: "d1" }], error: null }) });
+
+      await expect(crm.findOpenDeal(VERIFIED, "vendas")).resolves.toEqual({ id: "d1" });
+      expect(recorded).toContainEqual({ op: "eq", args: ["client_id", "crm-1"] });
+      expect(recorded).toContainEqual({ op: "eq", args: ["pipeline", "vendas"] });
+      expect(recorded).toContainEqual({ op: "neq", args: ["stage", "fechado"] });
+      expect(recorded).toContainEqual({ op: "order", args: ["updated_at", { ascending: false }] });
+      expect(recorded).toContainEqual({ op: "limit", args: [1] });
+      expect(recorded.map((c) => c.args[0])).not.toContain("created_by_conversation");
+    });
+
+    it("only sees this conversation's deals on an unverified link", async () => {
+      let recorded: TableCall = [];
+      const { crm } = crmWithTables({ deals: (calls) => ((recorded = calls), { data: [], error: null }) });
+
+      await expect(crm.findOpenDeal(UNVERIFIED, "manutencao")).resolves.toBeNull();
+      expect(recorded).toContainEqual({ op: "neq", args: ["stage", "pago"] });
+      expect(recorded).toContainEqual({ op: "eq", args: ["created_by_conversation", "conv-1"] });
     });
   });
 });

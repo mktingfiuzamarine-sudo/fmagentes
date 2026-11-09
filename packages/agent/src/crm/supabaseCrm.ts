@@ -2,8 +2,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizeCpf } from "../cpf";
 import { CrmCpfTakenError, type CrmClient, type CrmPort, type NewCrmClient } from "./CrmPort";
 import { phoneMatchSuffixes } from "./phoneMatch";
+import { CAS_ATTEMPTS, createRecordMethods } from "./records";
 
-export { CrmCpfTakenError } from "./CrmPort";
+export { CrmCpfTakenError, CrmNotInScopeError, CrmVesselKindMismatchError } from "./CrmPort";
 
 export const AGENT_CREATED_NOTE = "Cadastrado pelo agente WhatsApp";
 
@@ -19,9 +20,6 @@ function throwIfError(error: unknown): void {
 }
 
 const digitsOf = (value: string) => value.replace(/\D/g, "");
-
-/** Tries before attachPhone gives up on a notes field that keeps changing. */
-const ATTACH_ATTEMPTS = 3;
 
 /**
  * Direct access to the CRM's Supabase project with its service key (bypasses
@@ -41,6 +39,8 @@ export function createSupabaseCrm(
   }
 
   return {
+    ...createRecordMethods(supabase, options.agentUserId, throwIfError),
+
     async findByPhone(phone) {
       const suffixes = phoneMatchSuffixes(phone);
       if (suffixes.length === 0) return null;
@@ -95,7 +95,7 @@ export function createSupabaseCrm(
 
       // Compare-and-swap on notes: two conversations attaching at once must
       // not drop each other's line (a read-modify-write over PostgREST).
-      for (let attempt = 0; attempt < ATTACH_ATTEMPTS; attempt++) {
+      for (let attempt = 0; attempt < CAS_ATTEMPTS; attempt++) {
         const current = await findById(clientId);
         if (!current) throw new Error(`CRM client not found: ${clientId}`);
         if (current.phone && digitsOf(current.phone) === phoneDigits) return;

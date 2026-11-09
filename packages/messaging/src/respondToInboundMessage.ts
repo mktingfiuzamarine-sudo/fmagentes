@@ -181,16 +181,20 @@ async function identifyCustomer(
 ): Promise<CustomerContext> {
   if (inbound.crmClientId) {
     // Anyone can type someone else's CPF: a CPF link never exposes stored data.
-    if (inbound.crmLinkVia === "cpf") return { status: "registered" };
+    if (inbound.crmLinkVia === "cpf") {
+      return { status: "registered", crmClientId: inbound.crmClientId, verified: false };
+    }
     const known = await directory.findById(inbound.crmClientId);
-    return known ? { status: "registered", name: known.name } : { status: "unregistered" };
+    return known
+      ? { status: "registered", crmClientId: known.id, verified: true, name: known.name }
+      : { status: "unregistered" };
   }
 
   const match = await directory.findByPhone(inbound.contactPhone);
   if (!match) return { status: "unregistered" };
 
   await store.linkCustomer(inbound.conversationId, match.id, "phone");
-  return { status: "registered", name: match.name };
+  return { status: "registered", crmClientId: match.id, verified: true, name: match.name };
 }
 
 /** Sends unless the lock was lost; null when the conversation vanished. */

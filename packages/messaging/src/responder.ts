@@ -18,7 +18,13 @@ export interface HistoryMessage {
  * What the code knows about the customer before the model runs. A name is only
  * present when the link proves who is typing (phone match or created by us).
  */
-export type CustomerContext = { status: "registered"; name?: string } | { status: "unregistered" };
+/**
+ * `verified` is true when the link came from the phone number or the agent created the
+ * client; false when it came from a CPF/CNPJ the person typed. `name` only when verified.
+ */
+export type CustomerContext =
+  | { status: "registered"; crmClientId: string; verified: boolean; name?: string }
+  | { status: "unregistered" };
 
 /** A CRM link the responder made during the call; messaging persists it. */
 export interface LinkedCustomer {

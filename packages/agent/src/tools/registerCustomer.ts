@@ -1,7 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { LinkedCustomer } from "@fmagentes/messaging";
-import { isValidCpf, normalizeCpf } from "../cpf";
+import { isValidCpfOrCnpj } from "../cnpj";
+import { normalizeCpf } from "../cpf";
 import { CrmCpfTakenError, type CrmPort } from "../crm/CrmPort";
 
 export const REGISTER_TOOL_NAME = "cadastrar_cliente";
@@ -13,7 +14,7 @@ export interface RegistrationOutcome {
 
 export interface RegistrationArgs {
   nome: string;
-  cpf: string;
+  cpf_cnpj: string;
   email: string;
 }
 
@@ -32,12 +33,12 @@ export async function registerCustomer(
 ): Promise<string> {
   const name = args.nome.trim();
   if (name.length === 0) return "Erro: nome vazio. Peça o nome completo ao cliente.";
-  if (!isValidCpf(args.cpf)) return "Erro: CPF inválido. Peça ao cliente para conferir e enviar o CPF novamente.";
+  if (!isValidCpfOrCnpj(args.cpf_cnpj)) return "Erro: CPF ou CNPJ inválido. Peça ao cliente para conferir e enviar novamente.";
   const email = args.email.trim().toLowerCase();
   if (!emailSchema.safeParse(email).success) {
     return "Erro: e-mail inválido. Peça ao cliente para conferir e enviar o e-mail novamente.";
   }
-  const cpf = normalizeCpf(args.cpf);
+  const cpf = normalizeCpf(args.cpf_cnpj);
 
   const link = async (clientId: string) => {
     await crm.attachPhone(clientId, contactPhone);
@@ -64,10 +65,10 @@ export async function registerCustomer(
 export function createRegisterCustomerTool(crm: CrmPort, contactPhone: string, outcome: RegistrationOutcome) {
   return tool({
     description:
-      "Cadastra o cliente no CRM. Chame somente quando tiver nome completo, CPF e e-mail informados pelo cliente.",
+      "Cadastra o cliente no CRM. Chame somente quando tiver nome completo, CPF ou CNPJ e e-mail informados pelo cliente.",
     parameters: z.object({
       nome: z.string().describe("Nome completo do cliente"),
-      cpf: z.string().describe("CPF do cliente, com ou sem pontuação"),
+      cpf_cnpj: z.string().describe("CPF ou CNPJ do cliente, com ou sem pontuação"),
       email: z.string().describe("E-mail do cliente"),
     }),
     execute: (args) => registerCustomer(crm, contactPhone, args, outcome),
