@@ -95,6 +95,7 @@ describe("customerContextBlock with a CRM snapshot", () => {
 describe("PLATFORM_INSTRUCTIONS CRM rules", () => {
   it("carries the CRM rules", () => {
     for (const line of [
+      "- Nunca mostre ao cliente nomes internos do sistema: ids (embarcacao_id, negocio_id), nomes de ferramentas ou de campos. Fale como um atendente, com palavras do dia a dia.",
       "- Quando o cliente mencionar algo que tem lugar no CRM (dados dele, embarcações ou motores que já tem, o que quer comprar, consórcio, peça, conserto), grave com a ferramenta certa, aos poucos, sem avisar nem pedir confirmação.",
       "- Pergunte só o que for necessário para o próximo passo do atendimento, uma coisa por vez. Se o cliente não souber ou não quiser responder, siga em frente. Nunca faça uma lista de perguntas.",
       "- Abra o negócio pelo assunto: compra de barco, lancha, jet ski ou motor → vendas; consórcio → consorcios; peça ou acessório → pecas; conserto, revisão ou manutenção → manutencao. Em manutenção, informe o embarcacao_id da embarcação ou motor: use o id que registrar_embarcacao devolveu ou um da lista Embarcações do cliente, nunca um negocio_id nem um id inventado. Se ainda não souber qual é, abra o negócio de manutenção sem embarcacao_id e complete depois.",
