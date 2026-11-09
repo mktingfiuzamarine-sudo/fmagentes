@@ -3,7 +3,7 @@ import type { InboundJobData } from "./inboundQueue";
 import type { CustomerContext, HistoryMessage, ResponderPort } from "./responder";
 import type { CustomerDirectoryPort } from "./customerDirectory";
 import { ConversationBusyError, LockLostError, type ConversationLock, type LockHandle } from "./conversationLock";
-import { DEFAULT_HISTORY_LIMIT } from "./conversationHistory";
+import { DEFAULT_HISTORY_LIMIT, currentSession } from "./conversationHistory";
 import { laterTimestamp, notAfter } from "./internal/timestamps";
 import { createSupabaseRespondStore, type InboundContext, type RespondStore } from "./respondStore";
 import { sendMessage, ConversationNotFoundError } from "./sendMessage";
@@ -16,6 +16,8 @@ export type RespondDeps = MessagingDeps & {
   store?: RespondStore;
   /** How many recent messages the responder sees. Defaults to DEFAULT_HISTORY_LIMIT. */
   historyLimit?: number;
+  /** Silence that starts the conversation over for the model. Defaults to DEFAULT_SESSION_GAP_MS (12 h). */
+  sessionGapMs?: number;
 };
 
 export type RespondResult =
@@ -53,10 +55,12 @@ export async function respondToInboundMessage(deps: RespondDeps, job: InboundJob
       return { status: "skipped", reason: "already-answered" };
     }
 
-    const { messages: history, seenThrough } = await store.loadHistory(
+    const { messages: window, seenThrough } = await store.loadHistory(
       inbound.conversationId,
       deps.historyLimit ?? DEFAULT_HISTORY_LIMIT,
     );
+    // Only this session reaches the model; the watermark still covers the whole window.
+    const history = currentSession(window, inbound.createdAt, deps.sessionGapMs);
     // The reply answers this message even if it fell out of the window.
     const watermark = laterTimestamp(seenThrough, inbound.receivedAt);
     const customer = await identifyCustomer(deps.customerDirectory, store, inbound);

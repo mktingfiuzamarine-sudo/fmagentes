@@ -188,6 +188,22 @@ describe("respondToInboundMessage", () => {
     expect(second.store.loadHistory).toHaveBeenCalledWith("conv-1", 5);
   });
 
+  it("shows the model only the messages since the last 12-hour silence", async () => {
+    // INBOUND.createdAt is 2025-10-14T12:00:00Z.
+    const { deps, responder } = build({
+      store: {
+        history: [
+          { role: "user", content: "ontem", createdAt: "2025-10-13T09:00:00Z" },
+          { role: "assistant", content: "resposta de ontem", createdAt: "2025-10-13T09:01:00Z" },
+          { role: "user", content: "hoje", createdAt: "2025-10-14T11:59:00Z" },
+        ],
+      },
+    });
+    await respondToInboundMessage(deps, JOB);
+    const input = (responder.generate.mock.calls as unknown as [{ history: { content: string }[] }][])[0][0];
+    expect(input.history.map((m) => m.content)).toEqual(["hoje"]);
+  });
+
   it("releases the lock when a step throws", async () => {
     const { deps, store, release } = build();
     store.loadInbound.mockRejectedValueOnce(new Error("boom"));

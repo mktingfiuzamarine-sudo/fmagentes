@@ -67,3 +67,22 @@ export async function loadConversationHistory(
 ): Promise<HistoryMessage[]> {
   return (await loadHistoryWindow(deps, conversationId, limit)).messages;
 }
+
+/** Silence after which a conversation starts over for the model (the CRM keeps the facts). */
+export const DEFAULT_SESSION_GAP_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * The messages since the last silence of `gapMs` or more, counting the gap up
+ * to `nowIso` (the message being answered). Older talk is left out so it
+ * cannot mislead the model; what matters is in the CRM snapshot. A timestamp
+ * that cannot be read never counts as a gap.
+ */
+export function currentSession(messages: HistoryMessage[], nowIso: string, gapMs: number = DEFAULT_SESSION_GAP_MS): HistoryMessage[] {
+  let later = Date.parse(nowIso);
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const at = Date.parse(messages[i].createdAt);
+    if (Number.isFinite(at) && Number.isFinite(later) && later - at >= gapMs) return messages.slice(i + 1);
+    if (Number.isFinite(at)) later = at;
+  }
+  return messages;
+}

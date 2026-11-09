@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadConversationHistory, loadHistoryWindow } from "../src/conversationHistory";
+import { currentSession, loadConversationHistory, loadHistoryWindow } from "../src/conversationHistory";
 import { createSupabaseMock } from "./support/supabaseMock";
 
 function deps(rows: unknown) {
@@ -99,5 +99,30 @@ describe("loadHistoryWindow", () => {
       seenThrough: null,
     });
     expect(String(selected[0])).toContain("received_at");
+  });
+});
+
+describe("currentSession", () => {
+  const msg = (createdAt: string, content = createdAt) => ({ role: "user" as const, content, createdAt });
+  const H12 = 12 * 60 * 60 * 1000;
+
+  it("keeps everything when no gap reaches the limit", () => {
+    const history = [msg("2026-11-09T08:00:00Z"), msg("2026-11-09T15:00:00Z"), msg("2026-11-09T19:00:00Z")];
+    expect(currentSession(history, "2026-11-09T20:00:00Z", H12)).toEqual(history);
+  });
+
+  it("drops what came before the last silence of 12 hours or more", () => {
+    const history = [msg("2026-11-08T08:00:00Z", "old"), msg("2026-11-08T09:00:00Z", "old2"), msg("2026-11-09T09:00:00Z", "new")];
+    expect(currentSession(history, "2026-11-09T09:05:00Z", H12).map((m) => m.content)).toEqual(["new"]);
+  });
+
+  it("starts fresh when the customer comes back after 12 hours", () => {
+    const history = [msg("2026-11-08T08:00:00Z"), msg("2026-11-08T08:01:00Z")];
+    expect(currentSession(history, "2026-11-08T20:01:00Z", H12)).toEqual([]);
+  });
+
+  it("keeps messages whose time cannot be read", () => {
+    const history = [msg("not-a-date"), msg("2026-11-09T09:00:00Z")];
+    expect(currentSession(history, "2026-11-09T09:05:00Z", H12)).toEqual(history);
   });
 });
