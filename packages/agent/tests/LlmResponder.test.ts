@@ -169,6 +169,37 @@ describe("LlmResponder", () => {
     }
   });
 
+  it("does not send a promise to act later: asks the model to act now, then replies", async () => {
+    const crm = createFakeCrm();
+    const { model, calls } = scripted(
+      text("Vou registrar seu interesse na hélice. Um momento, por favor."),
+      toolCall("registrar_negocio", { funil: "pecas", titulo: "Hélice", descricao_peca: "Hélice Yamaha 115" }, "c1"),
+      text("Pronto, anotei a hélice para o seu Yamaha 115."),
+    );
+    const result = await responderWith(model, { crm }).responder.generate({ ...INPUT, customer: VERIFIED });
+
+    expect(result).toEqual({ kind: "reply", text: "Pronto, anotei a hélice para o seu Yamaha 115." });
+    expect(crm.createDeal).toHaveBeenCalledWith(expect.anything(), "pecas", "Hélice", { part_description: "Hélice Yamaha 115" });
+    const nudge = calls[1].prompt.at(-1) as { role: string; content: string };
+    expect(nudge.role).toBe("system");
+    expect(nudge.content).toContain("chame a ferramenta agora");
+  });
+
+  it("asks only once: a second promise is sent as it is", async () => {
+    const { model, calls } = scripted(text("Um momento."), text("Um momento, já volto."));
+    await expect(responderWith(model).responder.generate({ ...INPUT, customer: VERIFIED })).resolves.toEqual({
+      kind: "reply",
+      text: "Um momento, já volto.",
+    });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("does not ask again for an ordinary reply", async () => {
+    const { model, calls } = scripted(text("Qual é a potência do motor?"));
+    await responderWith(model).responder.generate({ ...INPUT, customer: VERIFIED });
+    expect(calls).toHaveLength(1);
+  });
+
   it("lets the model save twice and still reply", async () => {
     const { model, calls } = scripted(
       toolCall("atualizar_cliente", { empresa: "Acme" }, "c1"),

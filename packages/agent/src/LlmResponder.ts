@@ -1,4 +1,4 @@
-import { APICallError, generateText, type CoreTool, type LanguageModel } from "ai";
+import { APICallError, generateText, type CoreMessage, type CoreTool, type LanguageModel } from "ai";
 import { getModel, type LlmConfig, type LlmProvider } from "@fmagentes/shared";
 import {
   ResponderConfigurationError,
@@ -19,6 +19,12 @@ import { createUpdateCustomerTool, UPDATE_CUSTOMER_TOOL_NAME } from "./tools/upd
 export const DEFAULT_LLM_TIMEOUT_MS = 45_000;
 /** Room for several saves (one tool call each) plus the final text. */
 export const MAX_STEPS = 6;
+
+/** Words of a reply that promises to do something later, which never happens: nothing runs after the reply. */
+const PROMISE_TO_ACT =
+  /\bum (momento|minuto|instante)(zinho)?\b|\baguard[ea]\b|\bvou (registrar|verificar|anotar|consultar|checar|cadastrar|confirmar)\b|\bj[aá] volto\b/i;
+const ACT_NOW_NUDGE =
+  "Sua resposta prometeu fazer algo depois, mas nada acontece depois: o cliente só recebe a sua resposta final. Se precisa gravar algo, chame a ferramenta agora e então escreva a resposta final, sem prometer ações futuras. Se é algo que você não pode fazer (estoque, disponibilidade, prazo, preço), transfira para um atendente humano.";
 
 const STEPS_EXHAUSTED_SUMMARY = "O bot não concluiu a resposta (usou todas as etapas em ferramentas). Veja o histórico.";
 
@@ -87,24 +93,37 @@ export class LlmResponder implements ResponderPort {
       };
     }
 
-    let result;
-    try {
-      result = await generateText({
-        model,
-        messages: buildPrompt({ ...input, snapshot }),
-        tools,
-        maxSteps: MAX_STEPS,
-        // BullMQ owns retries (3 attempts with backoff); the SDK must not stack its own.
-        maxRetries: 0,
-        abortSignal: AbortSignal.timeout(this.options.timeoutMs ?? DEFAULT_LLM_TIMEOUT_MS),
-      });
-    } catch (error) {
-      throw classify(error, input.agent);
+    const abortSignal = AbortSignal.timeout(this.options.timeoutMs ?? DEFAULT_LLM_TIMEOUT_MS);
+    const run = async (messages: CoreMessage[]) => {
+      try {
+        return await generateText({
+          model,
+          messages,
+          tools,
+          maxSteps: MAX_STEPS,
+          // BullMQ owns retries (3 attempts with backoff); the SDK must not stack its own.
+          maxRetries: 0,
+          abortSignal,
+        });
+      } catch (error) {
+        throw classify(error, input.agent);
+      }
+    };
+
+    const prompt = buildPrompt({ ...input, snapshot });
+    let result = await run(prompt);
+    const steps = [...result.steps];
+    const hasHandoff = () => steps.some((step) => step.toolCalls.some((call) => call.toolName === HANDOFF_TOOL_NAME));
+    // The customer never gets a "later": a promise to act is not sent, the
+    // model is asked once to act now and write the final answer.
+    if (!hasHandoff() && PROMISE_TO_ACT.test(result.text)) {
+      result = await run([...prompt, ...result.responseMessages, { role: "system", content: ACT_NOW_NUDGE }]);
+      steps.push(...result.steps);
     }
 
     const log = this.options.logToolCall;
     if (log) {
-      for (const step of result.steps) {
+      for (const step of steps) {
         for (const call of step.toolResults as { toolName: string; args: unknown; result: unknown }[]) {
           log(toolCallLine(input.conversationId, call.toolName, call.args, call.result));
         }
@@ -112,7 +131,7 @@ export class LlmResponder implements ResponderPort {
     }
 
     const link = withLink(outcome.linked);
-    const handoffCall = result.steps
+    const handoffCall = steps
       .flatMap((step) => step.toolCalls)
       .find((call) => call.toolName === HANDOFF_TOOL_NAME);
     if (handoffCall) {
