@@ -25,7 +25,7 @@ import { planFill } from "./fill";
 
 type RecordMethods = Pick<
   CrmPort,
-  "loadSnapshot" | "fillClient" | "createVessel" | "fillVessel" | "findOpenDeal" | "createDeal" | "fillDeal"
+  "loadSnapshot" | "fillClient" | "createVessel" | "fillVessel" | "findOpenDeals" | "createDeal" | "fillDeal"
 >;
 type Row = Record<string, unknown>;
 
@@ -232,15 +232,14 @@ export function createRecordMethods(
       return { filled, conflicts, kind: row.kind as VesselKind };
     },
 
-    async findOpenDeal(scope, pipeline) {
-      const result = await scoped("deals", "id", scope)
+    async findOpenDeals(scope, pipeline) {
+      const result = await scoped("deals", "id, title", scope)
         .eq("pipeline", pipeline)
         .neq("stage", lastStage(pipeline))
         .order("updated_at", { ascending: false })
-        .limit(1);
+        .limit(SNAPSHOT_LIMIT);
       throwIfError(result.error);
-      const first = ((result.data as unknown as { id: string }[] | null) ?? [])[0];
-      return first ? { id: first.id } : null;
+      return ((result.data as unknown as { id: string; title: string }[] | null) ?? []).map((d) => ({ id: d.id, title: d.title }));
     },
 
     async createDeal(scope, pipeline, title, fields) {

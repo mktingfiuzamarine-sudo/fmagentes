@@ -732,17 +732,25 @@ describe("CRM records", () => {
     });
   });
 
-  describe("findOpenDeal", () => {
-    it("skips deals in the last stage", async () => {
+  describe("findOpenDeals", () => {
+    it("lists every open deal of the pipeline, skipping the last stage", async () => {
       let recorded: TableCall = [];
-      const { crm } = crmWithTables({ deals: (calls) => ((recorded = calls), { data: [{ id: "d1" }], error: null }) });
+      const { crm } = crmWithTables({
+        deals: (calls) => (
+          (recorded = calls),
+          { data: [{ id: "d1", title: "Hélice" }, { id: "d2", title: "Espelho" }], error: null }
+        ),
+      });
 
-      await expect(crm.findOpenDeal(VERIFIED, "vendas")).resolves.toEqual({ id: "d1" });
+      await expect(crm.findOpenDeals(VERIFIED, "vendas")).resolves.toEqual([
+        { id: "d1", title: "Hélice" },
+        { id: "d2", title: "Espelho" },
+      ]);
       expect(recorded).toContainEqual({ op: "eq", args: ["client_id", "crm-1"] });
       expect(recorded).toContainEqual({ op: "eq", args: ["pipeline", "vendas"] });
       expect(recorded).toContainEqual({ op: "neq", args: ["stage", "fechado"] });
       expect(recorded).toContainEqual({ op: "order", args: ["updated_at", { ascending: false }] });
-      expect(recorded).toContainEqual({ op: "limit", args: [1] });
+      expect(recorded).toContainEqual({ op: "limit", args: [20] });
       expect(recorded.map((c) => c.args[0])).not.toContain("created_by_conversation");
     });
 
@@ -750,7 +758,7 @@ describe("CRM records", () => {
       let recorded: TableCall = [];
       const { crm } = crmWithTables({ deals: (calls) => ((recorded = calls), { data: [], error: null }) });
 
-      await expect(crm.findOpenDeal(UNVERIFIED, "manutencao")).resolves.toBeNull();
+      await expect(crm.findOpenDeals(UNVERIFIED, "manutencao")).resolves.toEqual([]);
       expect(recorded).toContainEqual({ op: "neq", args: ["stage", "pago"] });
       expect(recorded).toContainEqual({ op: "eq", args: ["created_by_conversation", "conv-1"] });
     });

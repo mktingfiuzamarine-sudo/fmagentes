@@ -88,8 +88,8 @@ export interface CrmPort {
     expectedKind: VesselKind,
     noteLine?: string,
   ): Promise<FillResult & { kind: VesselKind }>;
-  /** Most recently updated deal of that pipeline in scope that is not in its last stage. */
-  findOpenDeal(scope: CrmScope, pipeline: PipelineId): Promise<{ id: string } | null>;
+  /** Open deals (not in the last stage) of that pipeline in scope, most recently updated first. */
+  findOpenDeals(scope: CrmScope, pipeline: PipelineId): Promise<{ id: string; title: string }[]>;
   /** Always in the pipeline's first stage. A `vessel_id` outside the scope throws CrmNotInScopeError. */
   createDeal(scope: CrmScope, pipeline: PipelineId, title: string, fields: DealFields): Promise<{ id: string }>;
   /** Throws CrmNotInScopeError when the deal (or a given `vessel_id`) is missing or outside the scope. */

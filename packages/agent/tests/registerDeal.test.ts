@@ -14,27 +14,61 @@ describe("registerDeal", () => {
     const crm = createFakeCrm();
     const answer = await registerDeal(crm, SCOPE, { funil: "vendas", titulo: "Compra jet ski", tipo_produto: "jet_ski" });
 
-    expect(crm.findOpenDeal).toHaveBeenCalledWith(SCOPE, "vendas");
+    expect(crm.findOpenDeals).toHaveBeenCalledWith(SCOPE, "vendas");
     expect(crm.createDeal).toHaveBeenCalledWith(SCOPE, "vendas", "Compra jet ski", { product_type: "jet_ski" });
     expect(answer).toBe("Negócio aberto (negocio_id: deal-new).");
   });
 
-  it("completes the open deal instead of creating another", async () => {
+  it("opens a second deal in the same pipeline for a new subject (no negocio_id)", async () => {
     const crm = createFakeCrm();
-    crm.findOpenDeal.mockResolvedValue({ id: "deal-1" });
+    crm.findOpenDeals.mockResolvedValue([{ id: "deal-1", title: "Hélice Yamaha 115" }]);
+    const answer = await registerDeal(crm, SCOPE, { funil: "pecas", titulo: "Espelho retrovisor jet ski", descricao_peca: "Espelho" });
+
+    expect(crm.fillDeal).not.toHaveBeenCalled();
+    expect(crm.createDeal).toHaveBeenCalledWith(SCOPE, "pecas", "Espelho retrovisor jet ski", { part_description: "Espelho" });
+    expect(answer).toBe("Negócio aberto (negocio_id: deal-new).");
+  });
+
+  it("completes the open deal the model names", async () => {
+    const crm = createFakeCrm();
+    crm.findOpenDeals.mockResolvedValue([
+      { id: "deal-2", title: "Espelho" },
+      { id: "deal-1", title: "Compra" },
+    ]);
     crm.fillDeal.mockResolvedValue({ filled: ["brand"], conflicts: [] });
-    const answer = await registerDeal(crm, SCOPE, { funil: "vendas", titulo: "Compra", marca: "Yamaha" });
+    const answer = await registerDeal(crm, SCOPE, { negocio_id: "deal-1", funil: "vendas", titulo: "Compra", marca: "Yamaha" });
 
     expect(crm.fillDeal).toHaveBeenCalledWith(SCOPE, "deal-1", { brand: "Yamaha" });
     expect(crm.createDeal).not.toHaveBeenCalled();
-    expect(answer).toBe("Negócio já aberto neste funil foi atualizado (negocio_id: deal-1).");
+    expect(answer).toBe("Negócio atualizado (negocio_id: deal-1).");
   });
 
-  it("says nothing new was saved when the open deal already had it", async () => {
+  it("completes the open deal with the same title instead of duplicating it", async () => {
     const crm = createFakeCrm();
-    crm.findOpenDeal.mockResolvedValue({ id: "deal-1" });
-    const answer = await registerDeal(crm, SCOPE, { funil: "vendas", titulo: "Compra", marca: "Yamaha" });
-    expect(answer).toBe("Negócio já aberto neste funil (negocio_id: deal-1). Nada novo para salvar.");
+    crm.findOpenDeals.mockResolvedValue([{ id: "deal-1", title: "Hélice  Yamaha 115" }]);
+    await registerDeal(crm, SCOPE, { funil: "pecas", titulo: "hélice yamaha 115", descricao_peca: "13 x 19 inox" });
+
+    expect(crm.fillDeal).toHaveBeenCalledWith(SCOPE, "deal-1", { part_description: "13 x 19 inox" });
+    expect(crm.createDeal).not.toHaveBeenCalled();
+  });
+
+  it("refuses a negocio_id that is not an open deal of this pipeline, writing nothing", async () => {
+    const crm = createFakeCrm();
+    crm.findOpenDeals.mockResolvedValue([{ id: "deal-1", title: "Hélice" }]);
+    const answer = await registerDeal(crm, SCOPE, { negocio_id: "deal-of-vendas", funil: "pecas", titulo: "x", descricao_peca: "y" });
+
+    expect(answer).toBe(
+      "Erro: esse negocio_id não é um negócio aberto deste funil. Use um negocio_id da lista Negócios abertos do mesmo funil, ou chame sem negocio_id para abrir um negócio novo.",
+    );
+    expect(crm.fillDeal).not.toHaveBeenCalled();
+    expect(crm.createDeal).not.toHaveBeenCalled();
+  });
+
+  it("says nothing new was saved when the named deal already had it", async () => {
+    const crm = createFakeCrm();
+    crm.findOpenDeals.mockResolvedValue([{ id: "deal-1", title: "Compra" }]);
+    const answer = await registerDeal(crm, SCOPE, { negocio_id: "deal-1", funil: "vendas", titulo: "Compra", marca: "Yamaha" });
+    expect(answer).toBe("Negócio já aberto (negocio_id: deal-1). Nada novo para salvar.");
   });
 
   it("drops a year outside 1900-2100 and says so", async () => {
@@ -59,11 +93,11 @@ describe("registerDeal", () => {
       vessels: [],
       openDeals: [{ id: "deal-1", pipeline: "vendas", stageLabel: "Lead", title: STORED, details: "" }],
     });
-    crm.findOpenDeal.mockResolvedValue({ id: "deal-1" });
+    crm.findOpenDeals.mockResolvedValue([{ id: "deal-1", title: STORED }]);
     crm.fillDeal.mockResolvedValue({ filled: [], conflicts: ["brand"] });
-    const answer = await registerDeal(crm, SCOPE, { funil: "vendas", titulo: "x", marca: "Outra" });
+    const answer = await registerDeal(crm, SCOPE, { negocio_id: "deal-1", funil: "vendas", titulo: "x", marca: "Outra" });
     expect(answer).toBe(
-      "Negócio já aberto neste funil foi atualizado (negocio_id: deal-1). Já havia outro valor salvo para: Marca; a equipe vai conferir.",
+      "Negócio atualizado (negocio_id: deal-1). Já havia outro valor salvo para: Marca; a equipe vai conferir.",
     );
     expect(answer).not.toContain(STORED);
   });
@@ -111,12 +145,12 @@ describe("registerDeal", () => {
 
   it("completes the open deal without an unknown vessel", async () => {
     const crm = createFakeCrm();
-    crm.findOpenDeal.mockResolvedValue({ id: "deal-1" });
+    crm.findOpenDeals.mockResolvedValue([{ id: "deal-1", title: "Revisão" }]);
     crm.fillDeal.mockRejectedValueOnce(new CrmNotInScopeError());
     crm.fillDeal.mockResolvedValueOnce({ filled: ["service_description"], conflicts: [] });
-    const answer = await registerDeal(crm, SCOPE, { funil: "manutencao", titulo: "x", embarcacao_id: VESSEL_ID, descricao_servico: "Óleo" });
+    const answer = await registerDeal(crm, SCOPE, { negocio_id: "deal-1", funil: "manutencao", titulo: "x", embarcacao_id: VESSEL_ID, descricao_servico: "Óleo" });
     expect(crm.fillDeal).toHaveBeenLastCalledWith(SCOPE, "deal-1", { service_description: "Óleo" });
-    expect(answer).toBe(`Negócio já aberto neste funil foi atualizado (negocio_id: deal-1).${UNKNOWN_VESSEL}`);
+    expect(answer).toBe(`Negócio atualizado (negocio_id: deal-1).${UNKNOWN_VESSEL}`);
   });
 
   it("keeps the neutral error when the deal itself is out of scope", async () => {
@@ -127,7 +161,7 @@ describe("registerDeal", () => {
 
   it("rethrows other CRM errors", async () => {
     const crm = createFakeCrm();
-    crm.findOpenDeal.mockRejectedValue(new Error("kept changing"));
+    crm.findOpenDeals.mockRejectedValue(new Error("kept changing"));
     await expect(registerDeal(crm, SCOPE, { funil: "pecas", titulo: "x" })).rejects.toThrow("kept changing");
   });
 });

@@ -34,7 +34,7 @@ export function createFakeCrm(seed: { byCpf?: CrmClient | null; created?: CrmCli
         kind: "barco_lancha",
       }),
     ),
-    findOpenDeal: vi.fn(async (_scope: CrmScope, _pipeline: PipelineId): Promise<{ id: string } | null> => null),
+    findOpenDeals: vi.fn(async (_scope: CrmScope, _pipeline: PipelineId): Promise<{ id: string; title: string }[]> => []),
     createDeal: vi.fn(async (_scope: CrmScope, _pipeline: PipelineId, _title: string, _fields: DealFields) => ({ id: "deal-new" })),
     fillDeal: vi.fn(async (_scope: CrmScope, _dealId: string, _fields: DealFields): Promise<FillResult> => ({ filled: [], conflicts: [] })),
   } satisfies CrmPort;

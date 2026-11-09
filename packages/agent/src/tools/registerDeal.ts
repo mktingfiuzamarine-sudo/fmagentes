@@ -12,7 +12,14 @@ const MAX_TITLE = 120;
 const UNKNOWN_VESSEL_NOTE =
   " A embarcação informada não existe e ficou de fora. Não invente embarcacao_id: pergunte ao cliente sobre o barco ou motor, registre com registrar_embarcacao e complete este negócio com o embarcacao_id devolvido.";
 
+const NOT_OPEN_HERE_ANSWER =
+  "Erro: esse negocio_id não é um negócio aberto deste funil. Use um negocio_id da lista Negócios abertos do mesmo funil, ou chame sem negocio_id para abrir um negócio novo.";
+
+const squashTitle = (value: string) => value.toLowerCase().replace(/\s+/g, " ").trim();
+const sameTitle = (a: string, b: string) => squashTitle(a) === squashTitle(b);
+
 export interface RegisterDealArgs {
+  negocio_id?: string;
   funil: PipelineId;
   titulo: string;
   tipo_produto?: (typeof VESSEL_KIND_IDS)[number];
@@ -25,7 +32,7 @@ export interface RegisterDealArgs {
   descricao_servico?: string;
 }
 
-/** Opens the customer's deal in the pipeline, or completes the one already open there. */
+/** Opens a deal in the pipeline, or completes the open one the model names (or one with the same title). */
 export async function registerDeal(crm: CrmPort, scope: CrmScope, args: RegisterDealArgs): Promise<string> {
   const givenVesselId = text(args.embarcacao_id);
   // Models invent vessel ids: a malformed one is left out up front, like an unknown one below.
@@ -52,18 +59,27 @@ export async function registerDeal(crm: CrmPort, scope: CrmScope, args: Register
   const dealFields = fields as DealFields;
   const suffix = () => `${guard.suffix()}${unknownVessel ? UNKNOWN_VESSEL_NOTE : ""}`;
 
+  // Comes from the customer's words: one line, capped, as it shows on the board and in the prompt.
+  const title = (text(args.titulo) ?? "Novo negócio").replace(/\s+/g, " ").slice(0, MAX_TITLE).trim();
+  const dealId = text(args.negocio_id);
+
   const save = async (toSave: DealFields): Promise<string> => {
-    const open = await crm.findOpenDeal(scope, args.funil);
-    if (open) {
-      const result = await crm.fillDeal(scope, open.id, toSave);
+    // A customer can have several open deals in one pipeline (a propeller and a mirror):
+    // the model names the one to complete; without an id a new subject opens a new deal.
+    const open = await crm.findOpenDeals(scope, args.funil);
+    const target = dealId !== undefined
+      ? open.find((deal) => deal.id === dealId)
+      // Same title again (a retried job, the model repeating itself) completes it instead of duplicating.
+      : open.find((deal) => sameTitle(deal.title, title));
+    if (dealId !== undefined && !target) return NOT_OPEN_HERE_ANSWER;
+    if (target) {
+      const result = await crm.fillDeal(scope, target.id, toSave);
       if (result.filled.length === 0 && result.conflicts.length === 0) {
-        return `Negócio já aberto neste funil (negocio_id: ${open.id}). ${NOTHING_TO_SAVE_ANSWER}${suffix()}`;
+        return `Negócio já aberto (negocio_id: ${target.id}). ${NOTHING_TO_SAVE_ANSWER}${suffix()}`;
       }
-      const base = `Negócio já aberto neste funil foi atualizado (negocio_id: ${open.id}).`;
+      const base = `Negócio atualizado (negocio_id: ${target.id}).`;
       return `${base}${savedAnswer(result, DEAL_FIELD_LABELS).slice("Salvo.".length)}${suffix()}`;
     }
-    // Comes from the customer's words: one line, capped, as it shows on the board and in the prompt.
-    const title = (text(args.titulo) ?? "Novo negócio").replace(/\s+/g, " ").slice(0, MAX_TITLE).trim();
     const created = await crm.createDeal(scope, args.funil, title, toSave);
     return `Negócio aberto (negocio_id: ${created.id}).${suffix()}`;
   };
@@ -84,8 +100,13 @@ export async function registerDeal(crm: CrmPort, scope: CrmScope, args: Register
 
 export function createRegisterDealTool(crm: CrmPort, scope: CrmScope) {
   return tool({
-    description: "Abre ou completa o negócio do cliente no funil do assunto. Nunca informe valores.",
+    description:
+      "Abre um negócio novo no funil do assunto, ou completa um negócio já aberto quando você informa o negocio_id dele. Um assunto novo (outra peça, outro serviço, outra compra) é sempre um negócio novo: chame sem negocio_id. Nunca informe valores.",
     parameters: toolArgs({
+      negocio_id: z
+        .string()
+        .optional()
+        .describe("Só para completar um negócio da lista Negócios abertos do mesmo funil. Omita para abrir um negócio novo."),
       funil: z.enum(PIPELINE_IDS).describe("vendas, consorcios, pecas ou manutencao"),
       titulo: z.string().describe("Título curto do negócio, ex.: Revisão Mercury 150 HP, Compra jet ski"),
       tipo_produto: z.enum(VESSEL_KIND_IDS).optional().describe("Só vendas: tipo de produto"),
