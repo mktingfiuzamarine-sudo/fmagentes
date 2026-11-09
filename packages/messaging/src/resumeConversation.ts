@@ -17,7 +17,7 @@ export async function resumeConversation(
 
   const result = await deps.supabase
     .from("conversations")
-    .update({ status: "open", handoff_summary: null, handoff_at: null, assigned_to: null, assigned_at: null })
+    .update({ status: "open", handoff_summary: null, handoff_at: null, assigned_to: null, assigned_at: null, handoff_deal_id: null })
     .eq("id", conversationId)
     .select("id");
   assertNoError(result.error);

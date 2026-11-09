@@ -56,6 +56,6 @@ export function createFakeStore(options: FakeStoreOptions = {}) {
       seenThrough: options.seenThrough === undefined ? INBOUND.receivedAt : options.seenThrough,
     })),
     linkCustomer: vi.fn(async (_conversationId: string, _crmClientId: string, _via: string) => {}),
-    markAwaitingHuman: vi.fn(async (_conversationId: string, _handoff: { summary: string; handoffAt: string }) => {}),
+    markAwaitingHuman: vi.fn(async (_conversationId: string, _handoff: { summary: string; handoffAt: string; dealId: string | null }) => {}),
   } satisfies RespondStore;
 }

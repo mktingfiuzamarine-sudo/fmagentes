@@ -2,6 +2,7 @@ import type { MessagingDeps } from "./deps";
 import type { InboundJobData } from "./inboundQueue";
 import type { CustomerContext, HistoryMessage, ResponderPort } from "./responder";
 import type { CustomerDirectoryPort } from "./customerDirectory";
+import type { AlertScope, DealAlertPort } from "./dealAlert";
 import { ConversationBusyError, LockLostError, type ConversationLock, type LockHandle } from "./conversationLock";
 import { DEFAULT_HISTORY_LIMIT, currentSession } from "./conversationHistory";
 import { laterTimestamp, notAfter } from "./internal/timestamps";
@@ -18,6 +19,10 @@ export type RespondDeps = MessagingDeps & {
   historyLimit?: number;
   /** Silence that starts the conversation over for the model. Defaults to DEFAULT_SESSION_GAP_MS (12 h). */
   sessionGapMs?: number;
+  /** Marks the CRM card of the subject on handoff; absent, the alert stays in the dashboard only. */
+  dealAlerts?: DealAlertPort;
+  /** A failed alert never blocks a handoff: it is reported here. */
+  onAlertError?: (error: unknown) => void;
 };
 
 export type RespondResult =
@@ -89,11 +94,20 @@ export async function respondToInboundMessage(deps: RespondDeps, job: InboundJob
       case "handoff": {
         // Persist first: if the send fails, the retry finds a pending handoff
         // and only sends the notice — the model is not called again.
+        const linked = result.linkedCustomer;
+        const alertScope: AlertScope | null = linked
+          ? { crmClientId: linked.crmClientId, verified: linked.via !== "cpf", conversationId: inbound.conversationId }
+          : customer.status === "registered"
+            ? { crmClientId: customer.crmClientId, verified: customer.verified, conversationId: inbound.conversationId }
+            : null;
+        const dealId = await resolveAlertDeal(deps, alertScope, result.dealId);
         if (lock.isLost()) throw new LockLostError(inbound.conversationId);
         await store.markAwaitingHuman(inbound.conversationId, {
           summary: result.summary,
           handoffAt: inbound.receivedAt,
+          dealId,
         });
+        await markDealWaiting(deps, dealId);
         const messageId = await sendGuarded(deps, lock, inbound.conversationId, agent.handoffMessage, watermark);
         return messageId ? { status: "handoff", messageId } : MESSAGE_NOT_FOUND;
       }
@@ -137,11 +151,17 @@ export async function handOffAfterFailure(
       return { status: "skipped", reason: "already-answered" };
     }
 
+    const alertScope: AlertScope | null = inbound.crmClientId
+      ? { crmClientId: inbound.crmClientId, verified: inbound.crmLinkVia !== "cpf", conversationId: inbound.conversationId }
+      : null;
+    const dealId = await resolveAlertDeal(deps, alertScope);
     if (lock.isLost()) throw new LockLostError(inbound.conversationId);
     await store.markAwaitingHuman(inbound.conversationId, {
       summary: `Bot indisponível: ${reason}`,
       handoffAt: inbound.receivedAt,
+      dealId,
     });
+    await markDealWaiting(deps, dealId);
     const messageId = await sendGuarded(deps, lock, inbound.conversationId, agent.handoffMessage, inbound.receivedAt);
     return messageId ? { status: "handoff", messageId } : MESSAGE_NOT_FOUND_FOR_HANDOFF;
   } finally {
@@ -217,5 +237,25 @@ async function sendGuarded(
     // The conversation vanished mid-flight; retrying cannot fix that.
     if (error instanceof ConversationNotFoundError) return null;
     throw error;
+  }
+}
+
+/** The CRM deal whose card shows the alert, or null (no CRM client, no open deal, or the CRM failed). */
+async function resolveAlertDeal(deps: RespondDeps, scope: AlertScope | null, dealId?: string): Promise<string | null> {
+  if (!deps.dealAlerts || !scope) return null;
+  try {
+    return await deps.dealAlerts.resolveAlertDeal(scope, dealId);
+  } catch (error) {
+    deps.onAlertError?.(error);
+    return null;
+  }
+}
+
+async function markDealWaiting(deps: RespondDeps, dealId: string | null): Promise<void> {
+  if (!deps.dealAlerts || !dealId) return;
+  try {
+    await deps.dealAlerts.setDealWaiting(dealId);
+  } catch (error) {
+    deps.onAlertError?.(error);
   }
 }

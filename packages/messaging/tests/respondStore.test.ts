@@ -124,12 +124,12 @@ describe("createSupabaseRespondStore", () => {
       },
     });
 
-    await store.markAwaitingHuman("conv-1", { summary: "Quer orçamento", handoffAt: "2026-10-14T12:00:00Z" });
+    await store.markAwaitingHuman("conv-1", { summary: "Quer orçamento", handoffAt: "2026-10-14T12:00:00Z", dealId: "d-1" });
 
     expect(recorded).toEqual([
       {
         op: "update",
-        args: [{ status: "awaiting_human", handoff_summary: "Quer orçamento", handoff_at: "2026-10-14T12:00:00Z" }],
+        args: [{ status: "awaiting_human", handoff_summary: "Quer orçamento", handoff_at: "2026-10-14T12:00:00Z", handoff_deal_id: "d-1" }],
       },
       { op: "eq", args: ["id", "conv-1"] },
     ]);

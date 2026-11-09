@@ -34,7 +34,7 @@ export interface LinkedCustomer {
 
 export type ResponderResult =
   | { kind: "reply"; text: string; linkedCustomer?: LinkedCustomer }
-  | { kind: "handoff"; summary: string; linkedCustomer?: LinkedCustomer }
+  | { kind: "handoff"; summary: string; dealId?: string; linkedCustomer?: LinkedCustomer }
   | { kind: "decline"; linkedCustomer?: LinkedCustomer };
 
 export interface ResponderInput {

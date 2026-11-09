@@ -21,6 +21,7 @@ export {
   type ResponderResult,
 } from "./responder";
 export type { CustomerDirectoryPort, DirectoryCustomer } from "./customerDirectory";
+export type { AlertScope, DealAlertPort } from "./dealAlert";
 export {
   createSupabaseRespondStore,
   type ConversationStatus,

@@ -36,7 +36,7 @@ export interface RespondStore {
   isAnswered(conversationId: string, receivedAt: string): Promise<boolean>;
   loadHistory(conversationId: string, limit: number): Promise<HistoryWindow>;
   linkCustomer(conversationId: string, crmClientId: string, via: CrmLinkVia): Promise<void>;
-  markAwaitingHuman(conversationId: string, handoff: { summary: string; handoffAt: string }): Promise<void>;
+  markAwaitingHuman(conversationId: string, handoff: { summary: string; handoffAt: string; dealId: string | null }): Promise<void>;
 }
 
 const INBOUND_COLUMNS =
@@ -117,7 +117,12 @@ export function createSupabaseRespondStore(supabase: SupabaseClient): RespondSto
     async markAwaitingHuman(conversationId, handoff) {
       const result = await supabase
         .from("conversations")
-        .update({ status: "awaiting_human", handoff_summary: handoff.summary, handoff_at: handoff.handoffAt })
+        .update({
+          status: "awaiting_human",
+          handoff_summary: handoff.summary,
+          handoff_at: handoff.handoffAt,
+          handoff_deal_id: handoff.dealId,
+        })
         .eq("id", conversationId);
       assertNoError(result.error);
     },

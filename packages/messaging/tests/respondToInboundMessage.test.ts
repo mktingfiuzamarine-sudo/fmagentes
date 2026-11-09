@@ -17,6 +17,8 @@ interface Options {
   phoneMatch?: { id: string; name: string } | null;
   byId?: { id: string; name: string } | null;
   historyLimit?: number;
+  dealAlerts?: { resolveAlertDeal: ReturnType<typeof vi.fn>; setDealWaiting: ReturnType<typeof vi.fn> };
+  onAlertError?: ReturnType<typeof vi.fn>;
 }
 
 function build(options: Options = {}) {
@@ -61,6 +63,8 @@ function build(options: Options = {}) {
     customerDirectory,
     store,
     historyLimit: options.historyLimit,
+    dealAlerts: options.dealAlerts,
+    onAlertError: options.onAlertError,
   } as never;
   return { deps, store, responder, release, evolutionApi, customerDirectory, inserts };
 }
@@ -236,6 +240,7 @@ describe("respondToInboundMessage", () => {
       expect(store.markAwaitingHuman).toHaveBeenCalledWith("conv-1", {
         summary: "Quer orçamento de casco",
         handoffAt: INBOUND.receivedAt,
+        dealId: null,
       });
       expect(evolutionApi.sendText).toHaveBeenCalledWith("acme", "5511999998888", AGENT.handoffMessage);
       expect(store.markAwaitingHuman.mock.invocationCallOrder[0]).toBeLessThan(
@@ -361,6 +366,99 @@ describe("respondToInboundMessage", () => {
     });
   });
 
+  describe("deal alert", () => {
+    const alerts = (resolved: () => Promise<string | null> = async () => "d-1") => ({
+      resolveAlertDeal: vi.fn(resolved),
+      setDealWaiting: vi.fn(async () => {}),
+    });
+    const verified = {
+      store: { inbound: { crmClientId: "crm-1", crmLinkVia: "phone" as const } },
+      byId: { id: "crm-1", name: "Ana Souza" },
+    };
+
+    it("marks the subject deal waiting on handoff", async () => {
+      const dealAlerts = alerts();
+      const { deps, store } = build({ ...verified, dealAlerts, result: { kind: "handoff", summary: "s", dealId: "d-1" } });
+
+      await expect(respondToInboundMessage(deps, JOB)).resolves.toEqual({ status: "handoff", messageId: "msg-out" });
+      expect(dealAlerts.resolveAlertDeal).toHaveBeenCalledWith(
+        { crmClientId: "crm-1", verified: true, conversationId: "conv-1" },
+        "d-1",
+      );
+      expect(store.markAwaitingHuman).toHaveBeenCalledWith("conv-1", { summary: "s", handoffAt: INBOUND.receivedAt, dealId: "d-1" });
+      expect(dealAlerts.setDealWaiting).toHaveBeenCalledWith("d-1");
+      expect(store.markAwaitingHuman.mock.invocationCallOrder[0]).toBeLessThan(
+        dealAlerts.setDealWaiting.mock.invocationCallOrder[0],
+      );
+    });
+
+    it("handoff still goes through when the alert fails", async () => {
+      const dealAlerts = alerts(async () => {
+        throw new Error("CRM down");
+      });
+      const onAlertError = vi.fn();
+      const { deps, store, evolutionApi } = build({
+        ...verified,
+        dealAlerts,
+        onAlertError,
+        result: { kind: "handoff", summary: "s", dealId: "d-1" },
+      });
+
+      await expect(respondToInboundMessage(deps, JOB)).resolves.toEqual({ status: "handoff", messageId: "msg-out" });
+      expect(store.markAwaitingHuman).toHaveBeenCalledWith("conv-1", { summary: "s", handoffAt: INBOUND.receivedAt, dealId: null });
+      expect(evolutionApi.sendText).toHaveBeenCalledWith("acme", "5511999998888", AGENT.handoffMessage);
+      expect(dealAlerts.setDealWaiting).not.toHaveBeenCalled();
+      expect(onAlertError).toHaveBeenCalledOnce();
+    });
+
+    it("handoff still goes through when marking the card fails", async () => {
+      const dealAlerts = alerts();
+      dealAlerts.setDealWaiting.mockRejectedValue(new Error("CRM down"));
+      const onAlertError = vi.fn();
+      const { deps, evolutionApi } = build({ ...verified, dealAlerts, onAlertError, result: { kind: "handoff", summary: "s" } });
+
+      await expect(respondToInboundMessage(deps, JOB)).resolves.toEqual({ status: "handoff", messageId: "msg-out" });
+      expect(evolutionApi.sendText).toHaveBeenCalled();
+      expect(onAlertError).toHaveBeenCalledOnce();
+    });
+
+    it("unregistered customer hands off without touching deals", async () => {
+      const dealAlerts = alerts();
+      const { deps, store } = build({ dealAlerts, result: { kind: "handoff", summary: "s" } });
+
+      await respondToInboundMessage(deps, JOB);
+      expect(dealAlerts.resolveAlertDeal).not.toHaveBeenCalled();
+      expect(store.markAwaitingHuman).toHaveBeenCalledWith("conv-1", { summary: "s", handoffAt: INBOUND.receivedAt, dealId: null });
+    });
+
+    it("uses the link the responder made in the same turn", async () => {
+      const dealAlerts = alerts();
+      const { deps } = build({
+        dealAlerts,
+        result: { kind: "handoff", summary: "s", linkedCustomer: { crmClientId: "crm-9", via: "cpf" } },
+      });
+
+      await respondToInboundMessage(deps, JOB);
+      expect(dealAlerts.resolveAlertDeal).toHaveBeenCalledWith(
+        { crmClientId: "crm-9", verified: false, conversationId: "conv-1" },
+        undefined,
+      );
+    });
+
+    it("failure handoff marks the latest deal", async () => {
+      const dealAlerts = alerts();
+      const { deps, store } = build({ store: { inbound: { crmClientId: "crm-1", crmLinkVia: "cpf" } }, dealAlerts });
+
+      await handOffAfterFailure(deps, JOB, "sem crédito");
+      expect(dealAlerts.resolveAlertDeal).toHaveBeenCalledWith(
+        { crmClientId: "crm-1", verified: false, conversationId: "conv-1" },
+        undefined,
+      );
+      expect(store.markAwaitingHuman).toHaveBeenCalledWith("conv-1", expect.objectContaining({ dealId: "d-1" }));
+      expect(dealAlerts.setDealWaiting).toHaveBeenCalledWith("d-1");
+    });
+  });
+
   describe("CRM identification", () => {
     it("links a phone match once and passes the name to the responder", async () => {
       const { deps, store, responder, customerDirectory } = build({ phoneMatch: { id: "crm-1", name: "Ana Souza" } });
@@ -455,6 +553,7 @@ describe("handOffAfterFailure", () => {
     expect(store.markAwaitingHuman).toHaveBeenCalledWith("conv-1", {
       summary: "Bot indisponível: sem crédito no provedor",
       handoffAt: INBOUND.receivedAt,
+      dealId: null,
     });
     expect(evolutionApi.sendText).toHaveBeenCalledWith("acme", "5511999998888", AGENT.handoffMessage);
     expect(inserts).toEqual([expect.objectContaining({ answers_through: INBOUND.receivedAt })]);
