@@ -36,8 +36,18 @@ describe("customerContextBlock with a CRM snapshot", () => {
   const snapshot: CrmSnapshot = {
     missingClientFields: ["landline", "birthday", "lead_source"],
     vessels: [{ id: "v-1", kind: "barco_lancha", summary: "Lancha Fibra 6 m" }],
-    openDeals: [{ id: "d-1", pipeline: "vendas", stageLabel: "Lead", title: "Compra de jet ski" }],
+    openDeals: [{ id: "d-1", pipeline: "vendas", stageLabel: "Lead", title: "Compra de jet ski", details: "" }],
   };
+
+  it("shows what is saved in each open deal, so the model can confirm it", () => {
+    const withDetails: CrmSnapshot = {
+      ...snapshot,
+      openDeals: [{ ...snapshot.openDeals[0], details: "Marca: Yamaha · Modelo: VX · Ano: 2020" }],
+    };
+    expect(customerContextBlock(verified, withDetails).split("\n")).toContain(
+      "- Vendas · Lead · Compra de jet ski · Marca: Yamaha · Modelo: VX · Ano: 2020 (negocio_id: d-1)",
+    );
+  });
   const empty: CrmSnapshot = { missingClientFields: [], vessels: [], openDeals: [] };
   const verified = { status: "registered", crmClientId: "crm-1", verified: true, name: "Ana Souza" } as const;
   const unverified = { status: "registered", crmClientId: "crm-1", verified: false } as const;

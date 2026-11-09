@@ -41,7 +41,9 @@ function recordLines(snapshot: CrmSnapshot): string[] {
   if (snapshot.openDeals.length > 0) {
     lines.push(
       "Negócios abertos:",
-      ...snapshot.openDeals.map((d) => `- ${PIPELINE_LABELS[d.pipeline]} · ${d.stageLabel} · ${d.title} (negocio_id: ${d.id})`),
+      ...snapshot.openDeals.map(
+        (d) => `- ${PIPELINE_LABELS[d.pipeline]} · ${d.stageLabel} · ${d.title}${d.details ? ` · ${d.details}` : ""} (negocio_id: ${d.id})`,
+      ),
     );
   }
   return lines;

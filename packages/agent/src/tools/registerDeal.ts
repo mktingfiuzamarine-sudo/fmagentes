@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { toolArgs } from "./toolArgs";
 import { AGENT_DEAL_FIELDS, DEAL_FIELD_LABELS, PIPELINE_IDS, VESSEL_KIND_IDS, type PipelineId } from "../crm/catalog";
 import type { CrmPort, CrmScope, DealFields } from "../crm/CrmPort";
 import { FieldGuard, NOT_FOUND_ANSWER, NOTHING_TO_SAVE_ANSWER, isUuid, orNotFound, savedAnswer, text } from "./crmAnswers";
@@ -65,7 +66,7 @@ export async function registerDeal(crm: CrmPort, scope: CrmScope, args: Register
 export function createRegisterDealTool(crm: CrmPort, scope: CrmScope) {
   return tool({
     description: "Abre ou completa o negócio do cliente no funil do assunto. Nunca informe valores.",
-    parameters: z.object({
+    parameters: toolArgs({
       funil: z.enum(PIPELINE_IDS).describe("vendas, consorcios, pecas ou manutencao"),
       titulo: z.string().describe("Título curto do negócio, ex.: Revisão Mercury 150 HP, Compra jet ski"),
       tipo_produto: z.enum(VESSEL_KIND_IDS).optional().describe("Só vendas: tipo de produto"),

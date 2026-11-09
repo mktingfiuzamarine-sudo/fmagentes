@@ -250,9 +250,26 @@ describe("CRM records", () => {
           (recorded.deals = calls),
           {
             data: [
-              { id: "d1", pipeline: "vendas", stage: "proposta", title: "Lancha 26" },
+              {
+                id: "d1",
+                pipeline: "vendas",
+                stage: "proposta",
+                title: "Lancha 26",
+                product_type: "motor_popa",
+                brand: "yamha",
+                model: "F115BETL",
+                year: 2016,
+              },
               { id: "d2", pipeline: "vendas", stage: "fechado", title: "Antigo" },
-              { id: "d3", pipeline: "manutencao", stage: "entregue", title: "Revisão" },
+              {
+                id: "d3",
+                pipeline: "manutencao",
+                stage: "entregue",
+                title: "Revisão",
+                vessel_id: "v1",
+                service_description: "Troca de óleo",
+                brand: null,
+              },
             ],
             error: null,
           }
@@ -263,8 +280,14 @@ describe("CRM records", () => {
         missingClientFields: ["email", "birthday", "company"],
         vessels: [{ id: "v1", kind: "jet_ski", summary: "Jet Ski · Sea-Doo GTI · 2020" }],
         openDeals: [
-          { id: "d1", pipeline: "vendas", stageLabel: "Proposta", title: "Lancha 26" },
-          { id: "d3", pipeline: "manutencao", stageLabel: "Entregue", title: "Revisão" },
+          {
+            id: "d1",
+            pipeline: "vendas",
+            stageLabel: "Proposta",
+            title: "Lancha 26",
+            details: "Tipo de produto: Motor de Popa · Marca: yamha · Modelo: F115BETL · Ano: 2016",
+          },
+          { id: "d3", pipeline: "manutencao", stageLabel: "Entregue", title: "Revisão", details: "Descrição do serviço: Troca de óleo" },
         ],
       });
       expect(recorded.clients).toContainEqual({ op: "eq", args: ["id", "crm-1"] });

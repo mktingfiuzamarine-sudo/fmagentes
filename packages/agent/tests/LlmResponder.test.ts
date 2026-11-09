@@ -119,6 +119,33 @@ describe("LlmResponder", () => {
     expect((b.calls[0].prompt[1] as { content: string }).content).toContain("Campos da ficha ainda vazios: Empresa.");
   });
 
+  it("reads a null optional field as absent instead of failing the turn", async () => {
+    const crm = createFakeCrm();
+    const { model } = scripted(
+      toolCall("atualizar_cliente", { email: "ana@example.com", telefone_fixo: null }, "c1"),
+      toolCall("registrar_embarcacao", { tipo: "motor_popa", marca: null, potencia_hp: 115 }, "c2"),
+      text("Anotado!"),
+    );
+    await expect(responderWith(model, { crm }).responder.generate({ ...INPUT, customer: VERIFIED })).resolves.toEqual({
+      kind: "reply",
+      text: "Anotado!",
+    });
+    expect(crm.fillClient).toHaveBeenCalledWith(expect.anything(), { email: "ana@example.com" });
+    expect(crm.createVessel).toHaveBeenCalledWith(expect.anything(), "motor_popa", { horsepower: 115 });
+  });
+
+  it("still sends every tool's parameters as a JSON object schema", async () => {
+    const { model, calls } = scripted(text("ok"));
+    await responderWith(model).responder.generate({ ...INPUT, customer: VERIFIED });
+    const tools = calls[0].mode.type === "regular" ? (calls[0].mode.tools ?? []) : [];
+    expect(tools.length).toBe(4);
+    for (const t of tools) {
+      const schema = (t as { parameters: { type?: string; properties?: object } }).parameters;
+      expect(schema.type, t.name).toBe("object");
+      expect(schema.properties, t.name).toBeDefined();
+    }
+  });
+
   it("lets the model save twice and still reply", async () => {
     const { model, calls } = scripted(
       toolCall("atualizar_cliente", { empresa: "Acme" }, "c1"),

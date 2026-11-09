@@ -1,8 +1,11 @@
 import {
+  AGENT_DEAL_FIELDS,
+  DEAL_FIELD_LABELS,
   HULL_TYPE_LABELS,
   JET_SKI_BRAND_LABELS,
   OUTBOARD_BRAND_LABELS,
   VESSEL_KIND_LABELS,
+  type PipelineId,
   type VesselFieldId,
   type VesselKind,
 } from "./catalog";
@@ -40,4 +43,19 @@ export function describeVessel(row: VesselRow): string {
     default:
       return kind;
   }
+}
+
+/**
+ * What the agent saved in a deal, e.g. "Marca: Yamaha · Modelo: F115 · Ano: 2016", so the model can
+ * confirm it to the customer. The linked vessel is left out: it already shows under Embarcações.
+ */
+export function describeDeal(pipeline: PipelineId, row: Record<string, unknown>): string {
+  const fields = (AGENT_DEAL_FIELDS[pipeline] ?? []) as readonly string[];
+  return fields
+    .filter((field) => field !== "vessel_id" && present(row[field]))
+    .map((field) => {
+      const value = field === "product_type" ? labelOf(VESSEL_KIND_LABELS, row[field]) : String(row[field]);
+      return `${DEAL_FIELD_LABELS[field] ?? field}: ${value}`;
+    })
+    .join(" · ");
 }

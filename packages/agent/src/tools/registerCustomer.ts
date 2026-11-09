@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { toolArgs } from "./toolArgs";
 import type { LinkedCustomer } from "@fmagentes/messaging";
 import { isValidCpfOrCnpj } from "../cnpj";
 import { normalizeCpf } from "../cpf";
@@ -66,7 +67,7 @@ export function createRegisterCustomerTool(crm: CrmPort, contactPhone: string, o
   return tool({
     description:
       "Cadastra o cliente no CRM. Chame somente quando tiver nome completo, CPF ou CNPJ e e-mail informados pelo cliente.",
-    parameters: z.object({
+    parameters: toolArgs({
       nome: z.string().describe("Nome completo do cliente"),
       cpf_cnpj: z.string().describe("CPF ou CNPJ do cliente, com ou sem pontuação"),
       email: z.string().describe("E-mail do cliente"),

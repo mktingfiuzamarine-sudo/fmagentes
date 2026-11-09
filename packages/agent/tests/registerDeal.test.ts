@@ -55,7 +55,7 @@ describe("registerDeal", () => {
     crm.loadSnapshot.mockResolvedValue({
       missingClientFields: [],
       vessels: [],
-      openDeals: [{ id: "deal-1", pipeline: "vendas", stageLabel: "Lead", title: STORED }],
+      openDeals: [{ id: "deal-1", pipeline: "vendas", stageLabel: "Lead", title: STORED, details: "" }],
     });
     crm.findOpenDeal.mockResolvedValue({ id: "deal-1" });
     crm.fillDeal.mockResolvedValue({ filled: [], conflicts: ["brand"] });

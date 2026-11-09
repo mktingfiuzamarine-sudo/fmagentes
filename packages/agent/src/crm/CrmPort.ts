@@ -35,7 +35,8 @@ export interface CrmSnapshot {
   /** Only for a verified link; empty otherwise. */
   missingClientFields: ClientFieldId[];
   vessels: { id: string; kind: VesselKind; summary: string }[];
-  openDeals: { id: string; pipeline: PipelineId; stageLabel: string; title: string }[];
+  /** `details`: what is saved in the deal, one line ("" when nothing). */
+  openDeals: { id: string; pipeline: PipelineId; stageLabel: string; title: string; details: string }[];
 }
 
 export const CLIENT_FIELD_IDS = ["email", "landline", "birthday", "lead_source", "referred_by", "company"] as const;

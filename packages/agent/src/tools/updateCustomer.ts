@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { toolArgs } from "./toolArgs";
 import { CLIENT_FIELD_LABELS, LEAD_SOURCE_IDS } from "../crm/catalog";
 import type { ClientFields, CrmPort, CrmScope } from "../crm/CrmPort";
 import { FieldGuard, NOTHING_TO_SAVE_ANSWER, orNotFound, savedAnswer, text } from "./crmAnswers";
@@ -55,7 +56,7 @@ export async function updateCustomer(crm: CrmPort, scope: CrmScope, args: Update
 export function createUpdateCustomerTool(crm: CrmPort, scope: CrmScope) {
   return tool({
     description: "Grava na ficha do cliente dados que ele mencionou. Só preenche campos vazios; nunca apaga o que já existe.",
-    parameters: z.object({
+    parameters: toolArgs({
       email: z.string().optional().describe("E-mail do cliente"),
       telefone_fixo: z.string().optional().describe("Telefone fixo do cliente"),
       aniversario: z.string().optional().describe("Data de aniversário no formato AAAA-MM-DD"),

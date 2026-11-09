@@ -20,7 +20,7 @@ import {
   type CrmScope,
   type FillResult,
 } from "./CrmPort";
-import { describeVessel, type VesselRow } from "./describe";
+import { describeDeal, describeVessel, type VesselRow } from "./describe";
 import { planFill } from "./fill";
 
 type RecordMethods = Pick<
@@ -150,7 +150,7 @@ export function createRecordMethods(
         .limit(SNAPSHOT_LIMIT);
       throwIfError(vesselsRead.error);
 
-      const dealsRead = await scoped("deals", "id, pipeline, stage, title", scope)
+      const dealsRead = await scoped("deals", ["id", "pipeline", "stage", "title", ...DEAL_FIELD_IDS].join(", "), scope)
         .or(PIPELINE_IDS.map((p) => `and(pipeline.eq.${p},stage.neq.${lastStage(p)})`).join(","))
         .order("updated_at", { ascending: false })
         .limit(SNAPSHOT_LIMIT);
@@ -161,7 +161,8 @@ export function createRecordMethods(
         kind: v.kind,
         summary: describeVessel(v),
       }));
-      const deals = (dealsRead.data as unknown as { id: string; pipeline: PipelineId; stage: string; title: string }[] | null) ?? [];
+      const deals =
+        (dealsRead.data as unknown as ({ id: string; pipeline: PipelineId; stage: string; title: string } & Row)[] | null) ?? [];
       const openDeals = deals
         .filter((d) => STAGES[d.pipeline] && d.stage !== lastStage(d.pipeline))
         .map((d) => ({
@@ -169,6 +170,7 @@ export function createRecordMethods(
           pipeline: d.pipeline,
           stageLabel: STAGES[d.pipeline].find((s) => s.id === d.stage)?.label ?? d.stage,
           title: d.title,
+          details: describeDeal(d.pipeline, d),
         }));
 
       return { missingClientFields, vessels, openDeals };

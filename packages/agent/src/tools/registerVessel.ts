@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { toolArgs } from "./toolArgs";
 import {
   ENGINE_COUNT_IDS,
   ENGINE_TYPE_IDS,
@@ -123,7 +124,7 @@ export function createRegisterVesselTool(crm: CrmPort, scope: CrmScope) {
   return tool({
     description:
       "Registra uma embarcação ou motor que o cliente JÁ TEM (não o que quer comprar). Se ela já aparece em Embarcações do cliente, use o embarcacao_id dela para completar em vez de registrar de novo.",
-    parameters: z.object({
+    parameters: toolArgs({
       embarcacao_id: z.string().optional().describe("Id de uma embarcação já registrada, para completar os dados dela"),
       tipo: z.enum(VESSEL_KIND_IDS).describe("barco_lancha, jet_ski ou motor_popa"),
       tipo_casco: z.enum(HULL_TYPE_IDS).optional().describe("Só barco_lancha: tipo de casco"),
