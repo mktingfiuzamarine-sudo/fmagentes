@@ -764,3 +764,87 @@ describe("CRM records", () => {
     });
   });
 });
+
+describe("deal alerts", () => {
+  const DEAL = "0b6f1c1e-3a4d-4c5e-8f90-123456789abc";
+  const OPEN_FILTER = { op: "or", args: [expect.stringContaining("and(pipeline.eq.vendas,stage.neq.fechado)")] };
+
+  /** Deals table: a lookup by id answers `byId`, the fallback answers `latest`. */
+  function dealsTable(byId: unknown, latest: unknown[]) {
+    const reads: TableCall[] = [];
+    const handler: Handler = (calls) => {
+      reads.push(calls);
+      const byIdRead = calls.some((c) => c.op === "eq" && c.args[0] === "id");
+      return { data: byIdRead ? byId : latest, error: null };
+    };
+    return { handler, reads };
+  }
+
+  it("resolveAlertDeal keeps an open deal in scope", async () => {
+    const deals = dealsTable({ id: DEAL }, [{ id: "d-latest" }]);
+    const { crm } = crmWithTables({ deals: deals.handler });
+
+    await expect(crm.resolveAlertDeal({ crmClientId: "crm-1", verified: true, conversationId: "conv-1" }, DEAL)).resolves.toBe(DEAL);
+    expect(deals.reads).toHaveLength(1);
+    expect(deals.reads[0]).toContainEqual({ op: "eq", args: ["client_id", "crm-1"] });
+    expect(deals.reads[0]).toContainEqual({ op: "eq", args: ["id", DEAL] });
+    expect(deals.reads[0]).toContainEqual(OPEN_FILTER);
+  });
+
+  it("resolveAlertDeal ignores out-of-scope and closed ids", async () => {
+    const deals = dealsTable(null, [{ id: "d-latest" }]);
+    const { crm } = crmWithTables({ deals: deals.handler });
+
+    await expect(crm.resolveAlertDeal({ crmClientId: "crm-1", verified: true, conversationId: "conv-1" }, DEAL)).resolves.toBe(
+      "d-latest",
+    );
+    const fallback = deals.reads[1];
+    expect(fallback).toContainEqual({ op: "eq", args: ["client_id", "crm-1"] });
+    expect(fallback).toContainEqual(OPEN_FILTER);
+    expect(fallback).toContainEqual({ op: "order", args: ["updated_at", { ascending: false }] });
+    expect(fallback).toContainEqual({ op: "limit", args: [1] });
+  });
+
+  it("resolveAlertDeal skips a malformed id straight to the fallback", async () => {
+    const deals = dealsTable({ id: "x" }, [{ id: "d-latest" }]);
+    const { crm } = crmWithTables({ deals: deals.handler });
+
+    await expect(crm.resolveAlertDeal({ crmClientId: "crm-1", verified: true, conversationId: "conv-1" }, "deal-1")).resolves.toBe(
+      "d-latest",
+    );
+    expect(deals.reads).toHaveLength(1);
+  });
+
+  it("resolveAlertDeal on unverified link only sees this conversation's deals", async () => {
+    const deals = dealsTable(null, []);
+    const { crm } = crmWithTables({ deals: deals.handler });
+
+    await crm.resolveAlertDeal({ crmClientId: "crm-1", verified: false, conversationId: "conv-1" }, DEAL);
+    expect(deals.reads).toHaveLength(2);
+    for (const read of deals.reads) {
+      expect(read).toContainEqual({ op: "eq", args: ["created_by_conversation", "conv-1"] });
+    }
+  });
+
+  it("returns null when the client has no open deal", async () => {
+    const deals = dealsTable(null, []);
+    const { crm } = crmWithTables({ deals: deals.handler });
+
+    await expect(crm.resolveAlertDeal({ crmClientId: "crm-1", verified: true, conversationId: "conv-1" })).resolves.toBeNull();
+  });
+
+  it("setDealWaiting writes only attention columns", async () => {
+    let recorded: TableCall = [];
+    const { crm } = crmWithTables({ deals: (calls) => ((recorded = calls), { data: null, error: null }) });
+
+    await crm.setDealWaiting(DEAL);
+    expect(updateOf(recorded)).toEqual({ attention: "waiting", attention_since: expect.any(String), attention_by: null });
+    expect(new Date(String((updateOf(recorded) as Record<string, unknown>).attention_since)).toString()).not.toBe("Invalid Date");
+    expect(recorded).toContainEqual({ op: "eq", args: ["id", DEAL] });
+  });
+
+  it("setDealWaiting throws when the CRM write fails", async () => {
+    const { crm } = crmWithTables({ deals: () => ({ data: null, error: { message: "boom" } }) });
+    await expect(crm.setDealWaiting(DEAL)).rejects.toThrow();
+  });
+});

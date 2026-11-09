@@ -22,10 +22,19 @@ import {
 } from "./CrmPort";
 import { describeDeal, describeVessel, type VesselRow } from "./describe";
 import { planFill } from "./fill";
+import { isUuid } from "../tools/crmAnswers";
 
 type RecordMethods = Pick<
   CrmPort,
-  "loadSnapshot" | "fillClient" | "createVessel" | "fillVessel" | "findOpenDeals" | "createDeal" | "fillDeal"
+  | "loadSnapshot"
+  | "fillClient"
+  | "createVessel"
+  | "fillVessel"
+  | "findOpenDeals"
+  | "createDeal"
+  | "fillDeal"
+  | "resolveAlertDeal"
+  | "setDealWaiting"
 >;
 type Row = Record<string, unknown>;
 
@@ -141,7 +150,31 @@ export function createRecordMethods(
     return scope.verified ? query : query.eq("created_by_conversation", scope.conversationId);
   }
 
+  /** Deals not in the last stage of their pipeline. */
+  const OPEN_DEALS = PIPELINE_IDS.map((p) => `and(pipeline.eq.${p},stage.neq.${lastStage(p)})`).join(",");
+
   return {
+    async resolveAlertDeal(alert, dealId) {
+      const scope: CrmScope = { clientId: alert.crmClientId, verified: alert.verified, conversationId: alert.conversationId };
+      if (dealId && isUuid(dealId)) {
+        const named = await scoped("deals", "id", scope).eq("id", dealId).or(OPEN_DEALS).maybeSingle();
+        throwIfError(named.error);
+        const found = named.data as unknown as { id: string } | null;
+        if (found) return found.id;
+      }
+      const latest = await scoped("deals", "id", scope).or(OPEN_DEALS).order("updated_at", { ascending: false }).limit(1);
+      throwIfError(latest.error);
+      return ((latest.data as unknown as { id: string }[] | null) ?? [])[0]?.id ?? null;
+    },
+
+    async setDealWaiting(dealId) {
+      const result = await supabase
+        .from("deals")
+        .update({ attention: "waiting", attention_since: new Date().toISOString(), attention_by: null })
+        .eq("id", dealId);
+      throwIfError(result.error);
+    },
+
     async loadSnapshot(scope) {
       const missingClientFields = await readClientMissing(scope);
 
@@ -151,7 +184,7 @@ export function createRecordMethods(
       throwIfError(vesselsRead.error);
 
       const dealsRead = await scoped("deals", ["id", "pipeline", "stage", "title", ...DEAL_FIELD_IDS].join(", "), scope)
-        .or(PIPELINE_IDS.map((p) => `and(pipeline.eq.${p},stage.neq.${lastStage(p)})`).join(","))
+        .or(OPEN_DEALS)
         .order("updated_at", { ascending: false })
         .limit(SNAPSHOT_LIMIT);
       throwIfError(dealsRead.error);

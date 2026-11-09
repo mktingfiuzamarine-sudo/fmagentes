@@ -51,7 +51,7 @@ export interface LlmResponderOptions {
  * name, free text in the customer's words) is logged by key only.
  */
 const LOGGED_VALUES = new Set([
-  "funil", "tipo", "tipo_produto", "embarcacao_id", "tipo_casco", "quantidade_motores", "tipo_motor",
+  "negocio_id", "funil", "tipo", "tipo_produto", "embarcacao_id", "tipo_casco", "quantidade_motores", "tipo_motor",
   "marca", "modelo", "ano", "marca_motor", "potencia_hp", "ano_motor", "ano_barco", "tamanho_metros", "tamanho_pes", "origem",
 ]);
 const MAX_LOG_PART = 300;
@@ -149,8 +149,10 @@ export class LlmResponder implements ResponderPort {
       .flatMap((step) => step.toolCalls)
       .find((call) => call.toolName === HANDOFF_TOOL_NAME);
     if (handoffCall) {
-      const summary = String((handoffCall.args as { resumo?: unknown }).resumo ?? "").trim();
-      return { kind: "handoff", summary, ...link };
+      const args = handoffCall.args as { resumo?: unknown; negocio_id?: unknown };
+      const summary = String(args.resumo ?? "").trim();
+      const dealId = typeof args.negocio_id === "string" ? args.negocio_id.trim() : "";
+      return { kind: "handoff", summary, ...(dealId ? { dealId } : {}), ...link };
     }
 
     const text = result.text.trim();

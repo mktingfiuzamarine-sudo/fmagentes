@@ -11,6 +11,7 @@ import type {
   NewCrmClient,
   VesselFields,
 } from "../../src/crm/CrmPort";
+import type { AlertScope } from "@fmagentes/messaging";
 
 export function createFakeCrm(seed: { byCpf?: CrmClient | null; created?: CrmClient } = {}) {
   return {
@@ -37,5 +38,7 @@ export function createFakeCrm(seed: { byCpf?: CrmClient | null; created?: CrmCli
     findOpenDeals: vi.fn(async (_scope: CrmScope, _pipeline: PipelineId): Promise<{ id: string; title: string }[]> => []),
     createDeal: vi.fn(async (_scope: CrmScope, _pipeline: PipelineId, _title: string, _fields: DealFields) => ({ id: "deal-new" })),
     fillDeal: vi.fn(async (_scope: CrmScope, _dealId: string, _fields: DealFields): Promise<FillResult> => ({ filled: [], conflicts: [] })),
+    resolveAlertDeal: vi.fn(async (_scope: AlertScope, _dealId?: string): Promise<string | null> => null),
+    setDealWaiting: vi.fn(async (_dealId: string) => {}),
   } satisfies CrmPort;
 }

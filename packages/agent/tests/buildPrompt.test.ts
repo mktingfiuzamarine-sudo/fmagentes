@@ -95,6 +95,7 @@ describe("customerContextBlock with a CRM snapshot", () => {
 describe("PLATFORM_INSTRUCTIONS CRM rules", () => {
   it("carries the CRM rules", () => {
     for (const line of [
+      "- Ao transferir, informe em negocio_id o negócio do assunto da conversa (da lista Negócios abertos ou o que você acabou de registrar).",
       "- Quando o cliente trouxer um assunto e já houver na lista Negócios abertos um negócio do mesmo funil, e não estiver claro se é o mesmo pedido (por exemplo, o cliente não citou marca, modelo ou potência diferentes), pergunte uma vez, citando esse negócio com palavras simples, se é sobre ele ou se é um pedido novo (por exemplo: \"É sobre o consórcio que você já iniciou com a gente, ou quer uma nova proposta para outro veículo?\"). Se for o mesmo, complete esse negócio informando o negocio_id dele; se for outro, abra um negócio novo.",
       "- Antes de transferir, colete o que as instruções do negócio pedirem, registre no CRM o negócio do assunto (com o que já souber) para a equipe encontrá-lo no funil, e escreva no campo resumo um resumo do atendimento para o atendente humano.",
       "- Nunca mostre ao cliente nomes internos do sistema: ids (embarcacao_id, negocio_id), nomes de ferramentas ou de campos. Fale como um atendente, com palavras do dia a dia.",

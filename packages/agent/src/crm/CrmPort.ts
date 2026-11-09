@@ -1,3 +1,4 @@
+import type { DealAlertPort } from "@fmagentes/messaging";
 import type { AgentDealFieldId, PipelineId, VesselFieldId, VesselKind } from "./catalog";
 
 export interface CrmClient {
@@ -50,7 +51,7 @@ export type DealFields = Partial<Record<AgentDealFieldId, string | number>>;
  * The agent's view of the CRM. Today a Supabase adapter; an HTTP API can
  * replace it without touching the tools.
  */
-export interface CrmPort {
+export interface CrmPort extends DealAlertPort {
   /** null when nobody, or more than one client, matches. */
   findByPhone(phone: string): Promise<CrmClient | null>;
   findById(id: string): Promise<CrmClient | null>;

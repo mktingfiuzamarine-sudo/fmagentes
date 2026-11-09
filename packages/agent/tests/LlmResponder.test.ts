@@ -246,6 +246,18 @@ describe("LlmResponder", () => {
     expect(calls).toHaveLength(1); // no execute → the loop stops
   });
 
+  it("passes the handoff deal through", async () => {
+    const { model } = scripted(toolCall("transferir_para_humano", { resumo: "r", negocio_id: " d-1 " }));
+    await expect(responderWith(model).responder.generate(INPUT)).resolves.toEqual({ kind: "handoff", summary: "r", dealId: "d-1" });
+  });
+
+  it("leaves dealId out when the handoff names no deal", async () => {
+    const { model } = scripted(toolCall("transferir_para_humano", { resumo: "r", negocio_id: null }));
+    const result = await responderWith(model).responder.generate(INPUT);
+    expect(result).toEqual({ kind: "handoff", summary: "r" });
+    expect(result).not.toHaveProperty("dealId");
+  });
+
   it("lets a handoff win over text in the same step", async () => {
     const { model } = scripted({
       ...toolCall("transferir_para_humano", { resumo: "Pediu humano" }),

@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { toolArgs } from "./toolArgs";
 
 export const HANDOFF_TOOL_NAME = "transferir_para_humano";
 
@@ -10,9 +11,13 @@ export const HANDOFF_TOOL_NAME = "transferir_para_humano";
 export const handoffTool = tool({
   description:
     "Transfere a conversa para um atendente humano. Use quando o cliente pedir um humano ou quando você não souber responder. Depois de chamar, não escreva mais nada.",
-  parameters: z.object({
+  parameters: toolArgs({
     resumo: z
       .string()
       .describe("Resumo para o atendente humano: quem é o cliente, o que ele quer e os dados já coletados."),
+    negocio_id: z
+      .string()
+      .optional()
+      .describe("negocio_id do negócio do assunto da conversa (da lista Negócios abertos ou o que você acabou de registrar)."),
   }),
 });
