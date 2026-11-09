@@ -31,6 +31,19 @@ export interface LlmResponderOptions {
   timeoutMs?: number;
   /** Test seam; production builds models with getModel. */
   createModel?: (provider: LlmProvider, model: string) => LanguageModel;
+  /** One line per tool call (name, args, answer), to see what the model saved. */
+  logToolCall?: (line: string) => void;
+}
+
+/** Tools whose arguments carry personal data (CPF, e-mail): only their keys are logged. */
+const KEYS_ONLY_TOOLS = new Set([REGISTER_TOOL_NAME, UPDATE_CUSTOMER_TOOL_NAME]);
+const MAX_LOG_PART = 300;
+
+function toolCallLine(conversationId: string, toolName: string, args: unknown, answer: unknown): string {
+  const shownArgs =
+    KEYS_ONLY_TOOLS.has(toolName) && args && typeof args === "object" ? Object.keys(args).join(",") : JSON.stringify(args);
+  const shownAnswer = typeof answer === "string" ? answer : JSON.stringify(answer);
+  return `[tool] conv ${conversationId} ${toolName} ${String(shownArgs).slice(0, MAX_LOG_PART)} -> ${String(shownAnswer).slice(0, MAX_LOG_PART)}`;
 }
 
 export class LlmResponder implements ResponderPort {
@@ -76,6 +89,15 @@ export class LlmResponder implements ResponderPort {
       });
     } catch (error) {
       throw classify(error, input.agent);
+    }
+
+    const log = this.options.logToolCall;
+    if (log) {
+      for (const step of result.steps) {
+        for (const call of step.toolResults as { toolName: string; args: unknown; result: unknown }[]) {
+          log(toolCallLine(input.conversationId, call.toolName, call.args, call.result));
+        }
+      }
     }
 
     const link = withLink(outcome.linked);

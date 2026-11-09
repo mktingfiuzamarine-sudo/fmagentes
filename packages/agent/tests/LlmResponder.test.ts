@@ -134,6 +134,28 @@ describe("LlmResponder", () => {
     expect(crm.createVessel).toHaveBeenCalledWith(expect.anything(), "motor_popa", { horsepower: 115 });
   });
 
+  it("logs each tool call, with only the keys of personal-data tools", async () => {
+    const crm = createFakeCrm();
+    const lines: string[] = [];
+    const { model } = scripted(
+      toolCall("atualizar_cliente", { email: "ana@example.com" }, "c1"),
+      toolCall("registrar_negocio", { funil: "manutencao", titulo: "Revisão" }, "c2"),
+      text("Anotado!"),
+    );
+    const responder = new LlmResponder({
+      llm: { anthropicApiKey: "a-key", openaiApiKey: "o-key" },
+      crm,
+      createModel: () => model,
+      logToolCall: (line) => lines.push(line),
+    });
+    await responder.generate({ ...INPUT, customer: VERIFIED });
+    expect(lines).toEqual([
+      "[tool] conv conv-1 atualizar_cliente email -> Salvo.",
+      '[tool] conv conv-1 registrar_negocio {"funil":"manutencao","titulo":"Revisão"} -> Negócio aberto (negocio_id: deal-new).',
+    ]);
+    expect(lines.join("\n")).not.toContain("ana@example.com");
+  });
+
   it("still sends every tool's parameters as a JSON object schema", async () => {
     const { model, calls } = scripted(text("ok"));
     await responderWith(model).responder.generate({ ...INPUT, customer: VERIFIED });

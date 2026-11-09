@@ -26,6 +26,7 @@ export function createWorkerDeps(env: Env, connection: Redis, options: { request
     responder: new LlmResponder({
       llm: { anthropicApiKey: env.ANTHROPIC_API_KEY, openaiApiKey: env.OPENAI_API_KEY },
       crm,
+      logToolCall: (line) => console.log(line),
     }),
     // The CRM adapter also serves as messaging's read-only customer directory.
     customerDirectory: crm,
