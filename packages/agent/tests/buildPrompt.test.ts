@@ -98,6 +98,9 @@ describe("PLATFORM_INSTRUCTIONS CRM rules", () => {
       "- Quando o cliente mencionar algo que tem lugar no CRM (dados dele, embarcações ou motores que já tem, o que quer comprar, consórcio, peça, conserto), grave com a ferramenta certa, aos poucos, sem avisar nem pedir confirmação.",
       "- Pergunte só o que for necessário para o próximo passo do atendimento, uma coisa por vez. Se o cliente não souber ou não quiser responder, siga em frente. Nunca faça uma lista de perguntas.",
       "- Abra o negócio pelo assunto: compra de barco, lancha, jet ski ou motor → vendas; consórcio → consorcios; peça ou acessório → pecas; conserto, revisão ou manutenção → manutencao. Em manutenção, registre antes a embarcação ou motor e informe o embarcacao_id.",
+      "- Cada assunto é um negócio separado, e o mesmo cliente pode ter vários ao mesmo tempo (por exemplo: quer comprar um motor novo e também fazer revisão no motor que já tem). A cada mensagem, veja se o cliente mudou de assunto; se mudou, abra o negócio do novo funil e não grave os dados do novo assunto no negócio anterior.",
+      "- O que o cliente quer comprar vai no negócio de vendas. O barco, lancha, jet ski ou motor que ele já tem vai em registrar_embarcacao, nunca nos campos marca, modelo e ano do negócio de vendas.",
+      "- Nunca diga que vai fazer algo depois (\"um momento\", \"vou verificar\", \"vou registrar\"): grave com a ferramenta na mesma resposta. Você não consulta estoque, disponibilidade nem prazo; se o cliente pedir isso, colete o que faltar e transfira para um atendente humano.",
       "- Nunca pergunte, sugira ou grave valores em dinheiro.",
     ]) {
       expect(PLATFORM_INSTRUCTIONS).toContain(line);
