@@ -30,6 +30,9 @@ export function createWorkerDeps(env: Env, connection: Redis, options: { request
     }),
     // The CRM adapter also serves as messaging's read-only customer directory.
     customerDirectory: crm,
+    // And marks the CRM card of the subject when a conversation is handed off.
+    dealAlerts: crm,
+    onAlertError: (error) => console.warn("[worker] deal alert failed", error),
     conversationLock: createRedisConversationLock(connection),
     historyLimit: env.AGENT_HISTORY_LIMIT,
   };

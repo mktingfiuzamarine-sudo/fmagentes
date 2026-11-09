@@ -45,4 +45,11 @@ describe("createWorkerDeps", () => {
     const deps = createWorkerDeps({ ...ENV, AGENT_HISTORY_LIMIT: 12 }, {} as never);
     expect(deps.historyLimit).toBe(12);
   });
+
+  it("wires the CRM as deal alerts", () => {
+    const deps = createWorkerDeps(ENV, {} as never);
+    expect(deps.dealAlerts).toBeDefined();
+    expect(deps.dealAlerts).toBe(deps.customerDirectory);
+    expect(typeof deps.onAlertError).toBe("function");
+  });
 });
