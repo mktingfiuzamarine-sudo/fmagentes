@@ -2,12 +2,15 @@ import { tool } from "ai";
 import { z } from "zod";
 import { toolArgs } from "./toolArgs";
 import { AGENT_DEAL_FIELDS, DEAL_FIELD_LABELS, PIPELINE_IDS, VESSEL_KIND_IDS, type PipelineId } from "../crm/catalog";
-import type { CrmPort, CrmScope, DealFields } from "../crm/CrmPort";
-import { FieldGuard, NOT_FOUND_ANSWER, NOTHING_TO_SAVE_ANSWER, isUuid, orNotFound, savedAnswer, text } from "./crmAnswers";
+import { CrmNotInScopeError, type CrmPort, type CrmScope, type DealFields } from "../crm/CrmPort";
+import { FieldGuard, NOTHING_TO_SAVE_ANSWER, isUuid, orNotFound, savedAnswer, text } from "./crmAnswers";
 
 export const REGISTER_DEAL_TOOL_NAME = "registrar_negocio";
 
 const MAX_TITLE = 120;
+/** Same wording for an invented and an out-of-scope vessel: it reveals nothing about other customers. */
+const UNKNOWN_VESSEL_NOTE =
+  " A embarcação informada não existe e ficou de fora. Não invente embarcacao_id: pergunte ao cliente sobre o barco ou motor, registre com registrar_embarcacao e complete este negócio com o embarcacao_id devolvido.";
 
 export interface RegisterDealArgs {
   funil: PipelineId;
@@ -24,8 +27,10 @@ export interface RegisterDealArgs {
 
 /** Opens the customer's deal in the pipeline, or completes the one already open there. */
 export async function registerDeal(crm: CrmPort, scope: CrmScope, args: RegisterDealArgs): Promise<string> {
-  const vesselId = text(args.embarcacao_id);
-  if (vesselId !== undefined && !isUuid(vesselId)) return NOT_FOUND_ANSWER;
+  const givenVesselId = text(args.embarcacao_id);
+  // Models invent vessel ids: a malformed one is left out up front, like an unknown one below.
+  let unknownVessel = givenVesselId !== undefined && !isUuid(givenVesselId);
+  const vesselId = unknownVessel ? undefined : givenVesselId;
 
   const guard = new FieldGuard(DEAL_FIELD_LABELS);
   const allowed = AGENT_DEAL_FIELDS[args.funil] as readonly string[];
@@ -45,21 +50,35 @@ export async function registerDeal(crm: CrmPort, scope: CrmScope, args: Register
     if (value !== undefined) fields[key] = value;
   }
   const dealFields = fields as DealFields;
+  const suffix = () => `${guard.suffix()}${unknownVessel ? UNKNOWN_VESSEL_NOTE : ""}`;
 
-  return orNotFound(async () => {
+  const save = async (toSave: DealFields): Promise<string> => {
     const open = await crm.findOpenDeal(scope, args.funil);
     if (open) {
-      const result = await crm.fillDeal(scope, open.id, dealFields);
+      const result = await crm.fillDeal(scope, open.id, toSave);
       if (result.filled.length === 0 && result.conflicts.length === 0) {
-        return `Negócio já aberto neste funil (negocio_id: ${open.id}). ${NOTHING_TO_SAVE_ANSWER}${guard.suffix()}`;
+        return `Negócio já aberto neste funil (negocio_id: ${open.id}). ${NOTHING_TO_SAVE_ANSWER}${suffix()}`;
       }
       const base = `Negócio já aberto neste funil foi atualizado (negocio_id: ${open.id}).`;
-      return `${base}${savedAnswer(result, DEAL_FIELD_LABELS).slice("Salvo.".length)}${guard.suffix()}`;
+      return `${base}${savedAnswer(result, DEAL_FIELD_LABELS).slice("Salvo.".length)}${suffix()}`;
     }
     // Comes from the customer's words: one line, capped, as it shows on the board and in the prompt.
     const title = (text(args.titulo) ?? "Novo negócio").replace(/\s+/g, " ").slice(0, MAX_TITLE).trim();
-    const created = await crm.createDeal(scope, args.funil, title, dealFields);
-    return `Negócio aberto (negocio_id: ${created.id}).${guard.suffix()}`;
+    const created = await crm.createDeal(scope, args.funil, title, toSave);
+    return `Negócio aberto (negocio_id: ${created.id}).${suffix()}`;
+  };
+
+  return orNotFound(async () => {
+    try {
+      return await save(dealFields);
+    } catch (error) {
+      // The deal was found in scope (or is new), so a scope error here can only be the vessel,
+      // refused before anything was written: save the rest without it.
+      if (!(error instanceof CrmNotInScopeError) || dealFields.vessel_id === undefined) throw error;
+      unknownVessel = true;
+      const { vessel_id: _dropped, ...withoutVessel } = dealFields;
+      return save(withoutVessel);
+    }
   });
 }
 

@@ -6,6 +6,8 @@ import { createFakeCrm } from "./support/fakeCrm";
 const SCOPE: CrmScope = { clientId: "crm-1", verified: true, conversationId: "conv-1" };
 const VESSEL_ID = "0b6f1c1e-3a4d-4c5e-8f90-123456789abc";
 const NOT_FOUND = "Erro: registro não encontrado. Não cite este erro ao cliente; continue o atendimento.";
+const UNKNOWN_VESSEL =
+  " A embarcação informada não existe e ficou de fora. Não invente embarcacao_id: pergunte ao cliente sobre o barco ou motor, registre com registrar_embarcacao e complete este negócio com o embarcacao_id devolvido.";
 
 describe("registerDeal", () => {
   it("opens a deal when none is open in the pipeline", async () => {
@@ -86,17 +88,41 @@ describe("registerDeal", () => {
     });
   });
 
-  it("turns an out-of-scope vessel into the neutral error", async () => {
+  it("opens the deal without an unknown (invented or out-of-scope) vessel and says what to do", async () => {
     const crm = createFakeCrm();
-    crm.createDeal.mockRejectedValue(new CrmNotInScopeError());
-    expect(await registerDeal(crm, SCOPE, { funil: "manutencao", titulo: "x", embarcacao_id: VESSEL_ID })).toBe(NOT_FOUND);
+    crm.createDeal.mockRejectedValueOnce(new CrmNotInScopeError());
+    const answer = await registerDeal(crm, SCOPE, {
+      funil: "manutencao",
+      titulo: "Revisão",
+      embarcacao_id: VESSEL_ID,
+      descricao_servico: "Revisão",
+    });
+    expect(crm.createDeal).toHaveBeenLastCalledWith(SCOPE, "manutencao", "Revisão", { service_description: "Revisão" });
+    expect(answer).toBe(`Negócio aberto (negocio_id: deal-new).${UNKNOWN_VESSEL}`);
   });
 
-  it("rejects a malformed embarcacao_id without calling the CRM", async () => {
+  it("drops a malformed embarcacao_id before calling the CRM, with the same answer", async () => {
     const crm = createFakeCrm();
-    expect(await registerDeal(crm, SCOPE, { funil: "manutencao", titulo: "x", embarcacao_id: "not-a-uuid" })).toBe(NOT_FOUND);
-    expect(crm.findOpenDeal).not.toHaveBeenCalled();
-    expect(crm.createDeal).not.toHaveBeenCalled();
+    const answer = await registerDeal(crm, SCOPE, { funil: "manutencao", titulo: "x", embarcacao_id: "f4c3e5b4-5c3e-4c5b-8e3b-5c3e5b4c5e3" });
+    expect(crm.createDeal).toHaveBeenCalledTimes(1);
+    expect(crm.createDeal).toHaveBeenCalledWith(SCOPE, "manutencao", "x", {});
+    expect(answer).toBe(`Negócio aberto (negocio_id: deal-new).${UNKNOWN_VESSEL}`);
+  });
+
+  it("completes the open deal without an unknown vessel", async () => {
+    const crm = createFakeCrm();
+    crm.findOpenDeal.mockResolvedValue({ id: "deal-1" });
+    crm.fillDeal.mockRejectedValueOnce(new CrmNotInScopeError());
+    crm.fillDeal.mockResolvedValueOnce({ filled: ["service_description"], conflicts: [] });
+    const answer = await registerDeal(crm, SCOPE, { funil: "manutencao", titulo: "x", embarcacao_id: VESSEL_ID, descricao_servico: "Óleo" });
+    expect(crm.fillDeal).toHaveBeenLastCalledWith(SCOPE, "deal-1", { service_description: "Óleo" });
+    expect(answer).toBe(`Negócio já aberto neste funil foi atualizado (negocio_id: deal-1).${UNKNOWN_VESSEL}`);
+  });
+
+  it("keeps the neutral error when the deal itself is out of scope", async () => {
+    const crm = createFakeCrm();
+    crm.createDeal.mockRejectedValue(new CrmNotInScopeError());
+    expect(await registerDeal(crm, SCOPE, { funil: "pecas", titulo: "x" })).toBe(NOT_FOUND);
   });
 
   it("rethrows other CRM errors", async () => {
