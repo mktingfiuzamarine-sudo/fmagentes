@@ -196,3 +196,20 @@ describe("isUuid", () => {
     expect(isUuid("6f1c2b8e-3d4a-4e5f-9a0b-1c2d3e4f5a6b'--")).toBe(false);
   });
 });
+
+describe("handoffDealOf", () => {
+  it("reads the conversation's handoff deal", async () => {
+    let recorded: TableCall = [];
+    const supabase = createSupabaseMock({
+      conversations: (calls) => ((recorded = calls), { data: { handoff_deal_id: "d-1" }, error: null }),
+    });
+    await expect(createSupabaseDashboardStore(supabase as never).handoffDealOf("c1")).resolves.toBe("d-1");
+    expect(recorded).toContainEqual({ op: "select", args: ["handoff_deal_id"] });
+    expect(recorded).toContainEqual({ op: "eq", args: ["id", "c1"] });
+  });
+
+  it("is null for a missing conversation or no deal", async () => {
+    const supabase = createSupabaseMock({ conversations: () => ({ data: null, error: null }) });
+    await expect(createSupabaseDashboardStore(supabase as never).handoffDealOf("c1")).resolves.toBeNull();
+  });
+});

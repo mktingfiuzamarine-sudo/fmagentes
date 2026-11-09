@@ -135,6 +135,42 @@ describe("POST /conversations/:id/resume", () => {
   });
 });
 
+describe("POST /conversations/:id/resume and the CRM card", () => {
+  const ID = "6f1c2b8e-3d4a-4e5f-9a0b-1c2d3e4f5a6b";
+  const DEAL = "0b6f1c1e-3a4d-4c5e-8f90-123456789abc";
+
+  it("resume clears the card read before resuming", async () => {
+    resumeMock.mockResolvedValue(undefined);
+    const handoffDealOf = vi.fn().mockResolvedValue(DEAL);
+    const dealAttention = { setInService: vi.fn(), setWaiting: vi.fn(), clear: vi.fn(async () => {}) };
+    const app = buildApp({ ...baseDeps(), dashboard: { handoffDealOf } as never, dealAttention });
+
+    const response = await app.inject({ method: "POST", url: `/conversations/${ID}/resume`, headers: AUTH_HEADERS });
+    expect(response.statusCode).toBe(200);
+    expect(handoffDealOf).toHaveBeenCalledWith(ID);
+    expect(handoffDealOf.mock.invocationCallOrder[0]).toBeLessThan(resumeMock.mock.invocationCallOrder[0]);
+    expect(dealAttention.clear).toHaveBeenCalledWith(DEAL);
+    await app.close();
+  });
+
+  it("resume still answers 200 when the CRM fails", async () => {
+    resumeMock.mockResolvedValue(undefined);
+    const dealAttention = { setInService: vi.fn(), setWaiting: vi.fn(), clear: vi.fn().mockRejectedValue(new Error("down")) };
+    const app = buildApp({ ...baseDeps(), dashboard: { handoffDealOf: vi.fn().mockResolvedValue(DEAL) } as never, dealAttention });
+    expect((await app.inject({ method: "POST", url: `/conversations/${ID}/resume`, headers: AUTH_HEADERS })).statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("resume without a handoff deal does not touch the CRM", async () => {
+    resumeMock.mockResolvedValue(undefined);
+    const dealAttention = { setInService: vi.fn(), setWaiting: vi.fn(), clear: vi.fn() };
+    const app = buildApp({ ...baseDeps(), dashboard: { handoffDealOf: vi.fn().mockResolvedValue(null) } as never, dealAttention });
+    expect((await app.inject({ method: "POST", url: `/conversations/${ID}/resume`, headers: AUTH_HEADERS })).statusCode).toBe(200);
+    expect(dealAttention.clear).not.toHaveBeenCalled();
+    await app.close();
+  });
+});
+
 describe("unexpected errors (M2)", () => {
   it("answers a generic 500 without the database's message", async () => {
     resumeMock.mockImplementationOnce(async () => {

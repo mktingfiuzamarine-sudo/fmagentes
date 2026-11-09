@@ -67,6 +67,8 @@ export interface DashboardStore {
   assign(conversationId: string, userId: string): Promise<AssignOutcome>;
   /** false when the conversation does not exist. */
   unassign(conversationId: string): Promise<boolean>;
+  /** The CRM deal whose card shows this conversation's alert; null when none or the conversation is missing. */
+  handoffDealOf(conversationId: string): Promise<string | null>;
   /** team_members.display_name, else the Auth e-mail; ids that resolve to nothing are absent. */
   displayNames(userIds: string[]): Promise<Map<string, string>>;
   listInstancesWithAgents(): Promise<InstanceWithAgents[]>;

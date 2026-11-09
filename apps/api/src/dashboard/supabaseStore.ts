@@ -174,6 +174,12 @@ export function createSupabaseDashboardStore(supabase: SupabaseClient): Dashboar
       return ((data as unknown[] | null) ?? []).length > 0;
     },
 
+    async handoffDealOf(conversationId: string) {
+      const { data, error } = await supabase.from("conversations").select("handoff_deal_id").eq("id", conversationId).maybeSingle();
+      check(error);
+      return (data as { handoff_deal_id: string | null } | null)?.handoff_deal_id ?? null;
+    },
+
     async displayNames(userIds: string[]) {
       const ids = [...new Set(userIds)];
       const names = new Map<string, string>();

@@ -47,6 +47,7 @@ export function fakeDashboardStore(overrides: Partial<DashboardStore> = {}): Das
     listMessages: vi.fn().mockResolvedValue([]),
     assign: vi.fn().mockResolvedValue("ok"),
     unassign: vi.fn().mockResolvedValue(true),
+    handoffDealOf: vi.fn().mockResolvedValue(null),
     displayNames: vi.fn().mockResolvedValue(new Map()),
     listInstancesWithAgents: vi.fn().mockResolvedValue([]),
     instanceExists: vi.fn().mockResolvedValue(true),

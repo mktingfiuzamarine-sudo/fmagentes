@@ -3,6 +3,7 @@ import { createSupabaseClient, createEvolutionApiClient } from "@fmagentes/share
 import { createInboundQueue } from "@fmagentes/messaging";
 import { buildApp } from "./app";
 import { createSupabaseCustomerNames } from "./dashboard/customerNames";
+import { createSupabaseDealAttention } from "./dashboard/dealAttention";
 import { createSupabaseAuthPort } from "./auth";
 import { loadEnv, parseTrustProxy } from "./env";
 
@@ -29,12 +30,12 @@ if (allowedUsers.length === 0) {
   throw new Error("API_ALLOWED_USERS is set but lists no usable entry — every request would be rejected with 403.");
 }
 
-const customerNames =
+const crm =
   env.CRM_SUPABASE_URL && env.CRM_SUPABASE_SERVICE_KEY
-    ? createSupabaseCustomerNames(
-        createSupabaseClient({ url: env.CRM_SUPABASE_URL, serviceKey: env.CRM_SUPABASE_SERVICE_KEY, timeoutMs: SUPABASE_TIMEOUT_MS }),
-      )
+    ? createSupabaseClient({ url: env.CRM_SUPABASE_URL, serviceKey: env.CRM_SUPABASE_SERVICE_KEY, timeoutMs: SUPABASE_TIMEOUT_MS })
     : undefined;
+const customerNames = crm ? createSupabaseCustomerNames(crm) : undefined;
+const dealAttention = crm ? createSupabaseDealAttention(crm) : undefined;
 
 const app = buildApp({
   redis,
@@ -43,6 +44,7 @@ const app = buildApp({
   inboundQueue,
   auth,
   customerNames,
+  dealAttention,
   config: {
     webhookSecret: env.WEBHOOK_SECRET,
     publicWebhookUrl: env.PUBLIC_WEBHOOK_URL,

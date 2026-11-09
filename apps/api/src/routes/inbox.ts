@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { dashboardStore, type AppDependencies } from "../app";
+import { dashboardStore, handoffDealFor, updateDealAttention, type AppDependencies } from "../app";
 import { isUuid } from "../dashboard/uuid";
 import type { InboxView } from "../dashboard/store";
 import { lookupCustomerNames, toCustomerView, toListItem, toMessage } from "../dashboard/present";
@@ -59,7 +59,10 @@ export function registerInboxRoutes(app: FastifyInstance, deps: AppDependencies)
     if (outcome === "not-awaiting") return reply.code(409).send({ error: "conversation is not awaiting a human" });
 
     const names = await store.displayNames([user.id]);
-    return { assignedTo: { id: user.id, displayName: names.get(user.id) ?? user.email ?? user.id } };
+    const displayName = names.get(user.id) ?? user.email ?? user.id;
+    const dealId = await handoffDealFor(deps, request.log, id);
+    await updateDealAttention(deps, request.log, dealId, (port, deal) => port.setInService(deal, displayName));
+    return { assignedTo: { id: user.id, displayName } };
   });
 
   app.post("/conversations/:id/unassign", async (request, reply) => {
@@ -67,6 +70,8 @@ export function registerInboxRoutes(app: FastifyInstance, deps: AppDependencies)
     if (!isUuid(id)) return reply.code(404).send({ error: "conversation not found" });
     const ok = await dashboardStore(deps).unassign(id);
     if (!ok) return reply.code(404).send({ error: "conversation not found" });
+    const dealId = await handoffDealFor(deps, request.log, id);
+    await updateDealAttention(deps, request.log, dealId, (port, deal) => port.setWaiting(deal));
     return { assignedTo: null };
   });
 }

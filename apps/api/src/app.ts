@@ -12,6 +12,7 @@ import { registerConversationRoutes } from "./routes/conversations";
 import type { DashboardStore } from "./dashboard/store";
 import { createSupabaseDashboardStore } from "./dashboard/supabaseStore";
 import type { CustomerNamePort } from "./dashboard/customerNames";
+import type { DealAttentionPort } from "./dashboard/dealAttention";
 import { registerMeRoute } from "./routes/me";
 import { registerAgentRoutes } from "./routes/agents";
 import { registerInboxRoutes } from "./routes/inbox";
@@ -51,6 +52,8 @@ export interface AppDependencies {
   dashboard?: DashboardStore;
   /** Absent when the CRM env vars are not set. */
   customerNames?: CustomerNamePort;
+  /** Absent when the CRM env vars are not set: the dashboard buttons then leave the CRM card alone. */
+  dealAttention?: DealAttentionPort;
 }
 
 export function dashboardStore(deps: AppDependencies): DashboardStore {
@@ -105,4 +108,37 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   });
 
   return app;
+}
+
+/**
+ * Applies `change` to the CRM card of the conversation's handoff. Never throws:
+ * a CRM failure must not change the dashboard action's answer.
+ */
+export async function updateDealAttention(
+  deps: AppDependencies,
+  log: { warn: (obj: object, msg: string) => void },
+  dealId: string | null,
+  change: (port: DealAttentionPort, dealId: string) => Promise<void>,
+): Promise<void> {
+  if (!deps.dealAttention || !dealId) return;
+  try {
+    await change(deps.dealAttention, dealId);
+  } catch (error) {
+    log.warn({ err: error }, "CRM card attention update failed");
+  }
+}
+
+/** The conversation's handoff deal, or null without a CRM (no read) or when the read fails. */
+export async function handoffDealFor(
+  deps: AppDependencies,
+  log: { warn: (obj: object, msg: string) => void },
+  conversationId: string,
+): Promise<string | null> {
+  if (!deps.dealAttention) return null;
+  try {
+    return await dashboardStore(deps).handoffDealOf(conversationId);
+  } catch (error) {
+    log.warn({ err: error }, "Reading the handoff deal failed");
+    return null;
+  }
 }

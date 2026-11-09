@@ -282,3 +282,74 @@ describe("GET /conversations/counts (M17)", () => {
     await app.close();
   });
 });
+
+describe("CRM card attention", () => {
+  const DEAL = "0b6f1c1e-3a4d-4c5e-8f90-123456789abc";
+  const attention = () => ({
+    setInService: vi.fn(async () => {}),
+    setWaiting: vi.fn(async () => {}),
+    clear: vi.fn(async () => {}),
+  });
+
+  it("assign marks the handoff deal in service with the attendant name", async () => {
+    const dealAttention = attention();
+    const store = fakeDashboardStore({
+      displayNames: vi.fn().mockResolvedValue(new Map([[TEST_USER.id, "Rafael"]])),
+      handoffDealOf: vi.fn().mockResolvedValue(DEAL),
+    });
+    const app = buildApp(deps(store, { dealAttention }));
+    expect((await post(app, `/conversations/${CONV_ID}/assign`)).statusCode).toBe(200);
+    expect(store.handoffDealOf).toHaveBeenCalledWith(CONV_ID);
+    expect(dealAttention.setInService).toHaveBeenCalledWith(DEAL, "Rafael");
+    await app.close();
+  });
+
+  it("assign names the attendant by e-mail when there is no display name", async () => {
+    const dealAttention = attention();
+    const store = fakeDashboardStore({ handoffDealOf: vi.fn().mockResolvedValue(DEAL) });
+    const app = buildApp(deps(store, { dealAttention }));
+    const response = await post(app, `/conversations/${CONV_ID}/assign`);
+    expect(dealAttention.setInService).toHaveBeenCalledWith(DEAL, response.json().assignedTo.displayName);
+    await app.close();
+  });
+
+  it("unassign puts the card back to waiting", async () => {
+    const dealAttention = attention();
+    const store = fakeDashboardStore({ handoffDealOf: vi.fn().mockResolvedValue(DEAL) });
+    const app = buildApp(deps(store, { dealAttention }));
+    expect((await post(app, `/conversations/${CONV_ID}/unassign`)).statusCode).toBe(200);
+    expect(dealAttention.setWaiting).toHaveBeenCalledWith(DEAL);
+    await app.close();
+  });
+
+  it("assign without handoff deal does not touch the CRM", async () => {
+    const dealAttention = attention();
+    const app = buildApp(deps(fakeDashboardStore(), { dealAttention }));
+    expect((await post(app, `/conversations/${CONV_ID}/assign`)).statusCode).toBe(200);
+    expect((await post(app, `/conversations/${CONV_ID}/unassign`)).statusCode).toBe(200);
+    expect(dealAttention.setInService).not.toHaveBeenCalled();
+    expect(dealAttention.setWaiting).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("assign that fails (409) does not touch the CRM", async () => {
+    const dealAttention = attention();
+    const store = fakeDashboardStore({
+      assign: vi.fn().mockResolvedValue("not-awaiting"),
+      handoffDealOf: vi.fn().mockResolvedValue(DEAL),
+    });
+    const app = buildApp(deps(store, { dealAttention }));
+    expect((await post(app, `/conversations/${CONV_ID}/assign`)).statusCode).toBe(409);
+    expect(dealAttention.setInService).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("assign still answers 200 when the CRM fails", async () => {
+    const dealAttention = attention();
+    dealAttention.setInService.mockRejectedValue(new Error("CRM down"));
+    const store = fakeDashboardStore({ handoffDealOf: vi.fn().mockResolvedValue(DEAL) });
+    const app = buildApp(deps(store, { dealAttention }));
+    expect((await post(app, `/conversations/${CONV_ID}/assign`)).statusCode).toBe(200);
+    await app.close();
+  });
+});

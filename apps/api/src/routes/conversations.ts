@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { AppDependencies } from "../app";
+import { handoffDealFor, updateDealAttention, type AppDependencies } from "../app";
 import { isUuid } from "../dashboard/uuid";
 import { sendMessage, resumeConversation, ConversationNotFoundError } from "@fmagentes/messaging";
 
@@ -28,8 +28,11 @@ export function registerConversationRoutes(app: FastifyInstance, deps: AppDepend
 
   app.post("/conversations/:id/resume", async (request, reply) => {
     const { id } = request.params as { id: string };
+    // Read before resuming: resuming clears handoff_deal_id.
+    const dealId = isUuid(id) ? await handoffDealFor(deps, request.log, id) : null;
     try {
       await resumeConversation(deps, id);
+      await updateDealAttention(deps, request.log, dealId, (port, deal) => port.clear(deal));
       return reply.code(200).send({ id, status: "open" });
     } catch (error) {
       if (error instanceof ConversationNotFoundError) {
