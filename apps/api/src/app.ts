@@ -121,10 +121,15 @@ export async function updateDealAttention(
   change: (port: DealAttentionPort, dealId: string) => Promise<void>,
 ): Promise<void> {
   if (!deps.dealAttention || !dealId) return;
-  try {
-    await change(deps.dealAttention, dealId);
-  } catch (error) {
-    log.warn({ err: error }, "CRM card attention update failed");
+  // Tried twice: after "Devolver" handoff_deal_id is gone, so a card left
+  // marked by a CRM blip would stay marked; the log names it for a manual fix.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await change(deps.dealAttention, dealId);
+      return;
+    } catch (error) {
+      log.warn({ err: error, dealId, attempt }, "CRM card attention update failed");
+    }
   }
 }
 

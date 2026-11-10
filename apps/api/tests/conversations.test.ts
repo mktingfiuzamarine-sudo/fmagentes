@@ -153,6 +153,17 @@ describe("POST /conversations/:id/resume and the CRM card", () => {
     await app.close();
   });
 
+  it("resume retries a failed clear once, so the card does not stay red", async () => {
+    resumeMock.mockResolvedValue(undefined);
+    const clear = vi.fn().mockRejectedValueOnce(new Error("blip")).mockResolvedValueOnce(undefined);
+    const dealAttention = { setInService: vi.fn(), setWaiting: vi.fn(), clear };
+    const app = buildApp({ ...baseDeps(), dashboard: { handoffDealOf: vi.fn().mockResolvedValue(DEAL) } as never, dealAttention });
+    expect((await app.inject({ method: "POST", url: `/conversations/${ID}/resume`, headers: AUTH_HEADERS })).statusCode).toBe(200);
+    expect(clear).toHaveBeenCalledTimes(2);
+    expect(clear).toHaveBeenNthCalledWith(2, DEAL);
+    await app.close();
+  });
+
   it("resume still answers 200 when the CRM fails", async () => {
     resumeMock.mockResolvedValue(undefined);
     const dealAttention = { setInService: vi.fn(), setWaiting: vi.fn(), clear: vi.fn().mockRejectedValue(new Error("down")) };
